@@ -17,19 +17,29 @@ global {
 	// ==================================================================
 	// Demonstration site, given as 5 deg 24'34.6"N  100 deg 18'57.9"E
 	// (George Town, Penang, near Jalan Prangin / Lebuh Acheh).
-	point site <- {5.409611, 100.316083};
-	point site_merc <- to_GAMA_CRS(site, "EPSG:3857").location;
+	// GAMA points are {lon, lat} in EPSG:4326. GAMA already projects the
+	// OSM file into the world CRS on load (metric, ~6 km extent), so the
+	// site is brought into that same space with to_GAMA_CRS -- do NOT use
+	// a manual CRS_transform here (GeoTools has no 4326->3857 transform in
+	// this build and envelope(osmfile) is already projected).
+	point site_4326 <- {100.316083, 5.409611};
+	// Computed in init (the world projection is not ready at global
+	// declaration time, so a declaration-time to_GAMA_CRS can land the
+	// study box off the network and seed zero vehicles).
+	point site_merc;
+	float study_half_size <- 1000.0;
+	geometry study_area;
 
 	// Half-width of the square study area, in metres. 1000 => 2 km x 2 km.
 	// This is the one number worth arguing about with the team: big enough to
 	// hold a real junction and its approaches, small enough that a workshop
 	// crowd can follow every vehicle on screen.
-	float study_half_size <- 1000.0;
-	geometry study_area <- square(2.0 * study_half_size) at_location site_merc;
+	// (study_half_size and study_area are declared above; study_area is
+	// built in init once the projection is ready).
 
-	// The OSM extract is deliberately larger than the study area, so traffic
-	// can drive in from outside and recirculate instead of jamming on the
-	// boundary. Only the study area is measured and reported.
+	// The OSM extract is cropped to the study area itself (2 km x 2 km),
+	// so the display frames the measured zone with no empty margins.
+	// Only the study area is measured and reported.
 	//
 	// study_samples is the sampling resolution of the peak-concentration
 	// search, not the diffusion resolution.
@@ -38,8 +48,9 @@ global {
 	// ==================================================================
 	// 2. DATA
 	// ==================================================================
-	// Everything is measured in EPSG:3857 metres, the same projected CRS the
-	// VinUni model uses, so sizes, speeds and areas are in real units.
+	// Everything is measured in the world CRS in metres (GAMA projects the
+	// OSM file on load), the same metric setup the VinUni model uses with
+	// its Pseudo-Mercator shapefiles, so sizes, speeds and areas are real units.
 	string osm_path <- "../includes/penang.osm";
 	string counts_path <- "../includes/traffic_counts.csv";
 
@@ -51,7 +62,11 @@ global {
 	]);
 
 	file<geometry> osmfile <- file<geometry>(osm_file(osm_path, osm_filter));
-	geometry shape <- to_GAMA_CRS(envelope(osmfile), "EPSG:3857");
+	// envelope(osmfile) is already in the world CRS (metric). This matches
+	// the OSM reference models (OSM File Import / OSM Loading Driving),
+	// which all use `geometry shape <- envelope(osmfile);` with no manual
+	// CRS conversion.
+	geometry shape <- envelope(osmfile);
 
 	// ==================================================================
 	// 3. SIMULATION CLOCK
@@ -101,13 +116,16 @@ global {
 	// 5. POLLUTION FIELD AND AQI
 	// ==================================================================
 	int field_size <- 300;
-	field pm25_field <- field(field_size, field_size);
+	field pm25_field <- field(field_size, field_size, 0.0);
 
-	// Diffusion kernel. The centre weight carries the decay of the pollutant
-	// plus the share that is not passed to the eight neighbours.
+	// Diffusion kernel, aligned with VinUniAir main2.gaml mat_diff:
+	// centre = 3/5 * pollutant_decay_rate, neighbours = 1/20 each, so the
+	// total is 0.6*decay + 0.4 < 1.0 and mass decays slowly instead of
+	// accumulating forever over a 30-minute workshop run.
+	float pollutant_decay_rate <- 0.99;
 	matrix<float> diffusion_kernel <- matrix([
 		[1.0 / 20.0, 1.0 / 20.0, 1.0 / 20.0],
-		[1.0 / 20.0, 0.60, 1.0 / 20.0],
+		[1.0 / 20.0, 0.60 * pollutant_decay_rate, 1.0 / 20.0],
 		[1.0 / 20.0, 1.0 / 20.0, 1.0 / 20.0]
 	]);
 
@@ -187,7 +205,7 @@ global {
 	// rather than letting the model die on a conversion error.
 	int count_of(string s) {
 		if (s = nil) { return 0; }
-		string t <- s.trim();
+		string t <- trim(s);
 		if (t = "") { return 0; }
 		return int(t);
 	}
@@ -241,6 +259,15 @@ global {
 	// 7. SET UP
 	// ==================================================================
 	init {
+		// Study box first: the projection is ready now, so to_GAMA_CRS
+		// lands the site in the same space as the OSM geometries.
+		site_merc <- to_GAMA_CRS(site_4326, "EPSG:4326").location;
+		study_area <- square(2.0 * study_half_size) at_location site_merc;
+		write "site_merc: " + string(site_merc) + "  world shape: " + string(shape)
+		    + "  study_area covers world centre: " + string(study_area covers shape.location);
+		write "study_area width: " + string(study_area.width) + " height: " + string(study_area.height)
+		    + " area: " + string(study_area.area) + " (expect 2000 x 2000, area 4000000)";
+
 		cell_area <- (shape.width / field_size) * (shape.height / field_size);
 		pm_scale <- 1000000.0 / (cell_area * pm_mix_height);
 
@@ -255,8 +282,10 @@ global {
 
 			if (highway_str != nil) {
 				if (length(geom.points) > 1) {
+					// geom is already in the world CRS (GAMA projects the
+					// OSM file on load); use it directly, no CRS_transform.
 					create road(
-						shape: to_GAMA_CRS(geom, "EPSG:3857"),
+						shape: geom,
 						road_name: string(geom get ("name")),
 						highway: highway_str
 					) {
@@ -267,7 +296,7 @@ global {
 			} else {
 				if (building_str != nil) {
 					if (length(geom.points) > 2) {
-						create building(shape: to_GAMA_CRS(geom, "EPSG:3857")) {
+						create building(shape: geom) {
 							depth <- 6.0 + rnd(24.0);
 						}
 					}
@@ -277,6 +306,24 @@ global {
 
 		roads_loaded <- length(road);
 		buildings_loaded <- length(building);
+
+		// Cropping the OSM file to the study box cuts streets at the border
+		// and leaves isolated fragments. A vehicle seeded on a fragment can
+		// never route to the rest of the map, so keep only the main
+		// connected component (by segment count) and drop the rest before
+		// the routing graph is built.
+		graph full_network <- as_edge_graph(road);
+		list main_roads <- [];
+		loop comp over: connected_components_of(full_network, true) {
+			if (length(comp) > length(main_roads)) { main_roads <- list(comp); }
+		}
+		int dropped_roads <- length(road) - length(main_roads);
+		if (dropped_roads > 0) {
+			ask (road - main_roads) { do die; }
+		}
+		write "Road network: " + string(roads_loaded) + " segments loaded, "
+		    + string(length(main_roads)) + " kept in the main component, "
+		    + string(dropped_roads) + " isolated fragments removed.";
 
 		// Route preferentially along longer roads so vehicles use the main
 		// streets rather than every service lane equally.
@@ -293,7 +340,7 @@ global {
 		file counts_file <- csv_file(counts_path, true);
 		matrix counts <- matrix(counts_file);
 		int first_row <- 0;
-		if (string(counts[0, 0]) = "road_name") { first_row := 1; }
+		if (string(counts[0, 0]) = "road_name") { first_row <- 1; }
 
 		map<string, int> cars_by_name <- map<string, int>();
 		map<string, int> buses_by_name <- map<string, int>();
@@ -329,17 +376,17 @@ global {
 				// has to be tested against the .keys list.
 				bool have_class <- hw in segments_by_class.keys;
 				if (have_class) {
-					segments_by_class[hw] := segments_by_class[hw] + 1;
-					cars_by_class[hw] := cars_by_class[hw] + c_n;
-					buses_by_class[hw] := buses_by_class[hw] + b_n;
-					lorries_by_class[hw] := lorries_by_class[hw] + l_n;
-					bikes_by_class[hw] := bikes_by_class[hw] + m_n;
+					segments_by_class[hw] <- segments_by_class[hw] + 1;
+					cars_by_class[hw] <- cars_by_class[hw] + c_n;
+					buses_by_class[hw] <- buses_by_class[hw] + b_n;
+					lorries_by_class[hw] <- lorries_by_class[hw] + l_n;
+					bikes_by_class[hw] <- bikes_by_class[hw] + m_n;
 				} else {
-					segments_by_class[hw] := 1;
-					cars_by_class[hw] := c_n;
-					buses_by_class[hw] := b_n;
-					lorries_by_class[hw] := l_n;
-					bikes_by_class[hw] := m_n;
+					segments_by_class[hw] <- 1;
+					cars_by_class[hw] <- c_n;
+					buses_by_class[hw] <- b_n;
+					lorries_by_class[hw] <- l_n;
+					bikes_by_class[hw] <- m_n;
 				}
 			}
 		}
@@ -373,7 +420,7 @@ global {
 				float crossing_h <- (r.shape.perimeter / 1000.0) / v_kmh;
 
 				bool named <- (r.road_name != nil) and (r.road_name in cars_by_name.keys);
-				if (named) { matched_roads := matched_roads + 1; } else { default_roads := default_roads + 1; }
+				if (named) { matched_roads <- matched_roads + 1; } else { default_roads <- default_roads + 1; }
 
 				// Unnamed lanes fall back to the mean of their road class,
 				// spread over however many segments that class has.
@@ -382,34 +429,34 @@ global {
 				int l_vol <- 0;
 				int m_vol <- 0;
 				if (named) {
-					c_vol := cars_by_name[r.road_name];
-					b_vol := buses_by_name[r.road_name];
-					l_vol := lorries_by_name[r.road_name];
-					m_vol := bikes_by_name[r.road_name];
+					c_vol <- cars_by_name[r.road_name];
+					b_vol <- buses_by_name[r.road_name];
+					l_vol <- lorries_by_name[r.road_name];
+					m_vol <- bikes_by_name[r.road_name];
 				} else {
 					// Mean per segment for this road class. counted is false when the
 					// class never appears in the CSV at all.
 					bool counted <- r.highway in segments_by_class.keys;
 					int n_seg <- counted ? segments_by_class[r.highway] : 1;
-					c_vol := counted ? int(cars_by_class[r.highway] / n_seg) : 100;
-					b_vol := counted ? int(buses_by_class[r.highway] / n_seg) : 4;
-					l_vol := counted ? int(lorries_by_class[r.highway] / n_seg) : 8;
-					m_vol := counted ? int(bikes_by_class[r.highway] / n_seg) : 90;
+					c_vol <- counted ? int(cars_by_class[r.highway] / n_seg) : 100;
+					b_vol <- counted ? int(buses_by_class[r.highway] / n_seg) : 4;
+					l_vol <- counted ? int(lorries_by_class[r.highway] / n_seg) : 8;
+					m_vol <- counted ? int(bikes_by_class[r.highway] / n_seg) : 90;
 				}
 
-				float raw_car := c_vol * crossing_h * fleet_scale + carry_car;
-				float raw_bus := b_vol * crossing_h * fleet_scale + carry_bus;
-				float raw_lorry := l_vol * crossing_h * fleet_scale + carry_lorry;
-				float raw_bike := m_vol * crossing_h * fleet_scale + carry_bike;
+				float raw_car <- c_vol * crossing_h * fleet_scale + carry_car;
+				float raw_bus <- b_vol * crossing_h * fleet_scale + carry_bus;
+				float raw_lorry <- l_vol * crossing_h * fleet_scale + carry_lorry;
+				float raw_bike <- m_vol * crossing_h * fleet_scale + carry_bike;
 
-				int n_car := int(raw_car);
-				int n_bus := int(raw_bus);
-				int n_lorry := int(raw_lorry);
-				int n_bike := int(raw_bike);
-				carry_car := raw_car - n_car;
-				carry_bus := raw_bus - n_bus;
-				carry_lorry := raw_lorry - n_lorry;
-				carry_bike := raw_bike - n_bike;
+				int n_car <- int(raw_car);
+				int n_bus <- int(raw_bus);
+				int n_lorry <- int(raw_lorry);
+				int n_bike <- int(raw_bike);
+				carry_car <- raw_car - n_car;
+				carry_bus <- raw_bus - n_bus;
+				carry_lorry <- raw_lorry - n_lorry;
+				carry_bike <- raw_bike - n_bike;
 
 				// The n > 0 guards matter. A GAMA `from: a to: b` loop runs
 				// backwards when a > b, so `from: 1 to: 0` executes twice
@@ -432,8 +479,12 @@ global {
 		// Keep the demo interactive on modest workshop hardware. If the
 		// surveyed fleet is larger than max_vehicles, scale every class down
 		// by the same factor so the vehicle mix is preserved.
-		int total_spots := length(car_spots) + length(bus_spots)
+		int total_spots <- length(car_spots) + length(bus_spots)
 		                + length(lorry_spots) + length(bike_spots);
+		write "roads in study area: " + string(matched_roads + default_roads)
+		    + " of " + string(roads_loaded) + "  |  raw vehicle spots: " + string(total_spots)
+		    + " (cars " + string(length(car_spots)) + ", bikes " + string(length(bike_spots))
+		    + ", buses " + string(length(bus_spots)) + ", lorries " + string(length(lorry_spots)) + ")";
 		if (total_spots > max_vehicles and total_spots > 0) {
 			float cap <- max_vehicles * 1.0 / total_spots;
 			car_spots <- keep_leading(car_spots, int(length(car_spots) * cap));
@@ -449,39 +500,39 @@ global {
 
 		// Give a share of the fleet an electric powertrain.
 		if (electric_share > 0.0) {
-			ask (int(electric_share * length(car_random)) among car_random) { is_electrical := true; }
-			ask (int(electric_share * length(motorbike_random)) among motorbike_random) { is_electrical := true; }
-			ask (int(electric_share * length(bus_random)) among bus_random) { is_electrical := true; }
-			ask (int(electric_share * length(lorry_random)) among lorry_random) { is_electrical := true; }
+			ask (int(electric_share * length(car_random)) among car_random) { is_electrical <- true; }
+			ask (int(electric_share * length(motorbike_random)) among motorbike_random) { is_electrical <- true; }
+			ask (int(electric_share * length(bus_random)) among bus_random) { is_electrical <- true; }
+			ask (int(electric_share * length(lorry_random)) among lorry_random) { is_electrical <- true; }
 		}
 
 		// Outline of the study area, so the audience always sees the boundary.
-		study_border(shape: study_area);
+		create study_border with: [shape::study_area];
 
-		// On-screen furniture is anchored to the site, not to the OSM
-		// envelope: the envelope runs to seven figures in EPSG:3857, so
-		// coordinates near zero would be far off-camera.
+		// On-screen furniture is anchored to the site, not to the world
+		// origin, so it stays inside the camera view whatever CRS the
+		// world uses.
 		float panel_x <- site_merc.x - study_half_size + 80.0;
 		float panel_y <- site_merc.y - study_half_size + 80.0;
 
 		// Clock readout, bottom-left inside the study area.
-		readout(
-			clock_pos: { panel_x, panel_y + 130.0, 0.0 },
-			note_pos:  { panel_x, panel_y + 70.0, 0.0 }
-		);
+		create readout with: [
+			clock_pos::{ panel_x, panel_y + 130.0, 0.0 },
+			note_pos::{ panel_x, panel_y + 70.0, 0.0 }
+		];
 
 		// AQI chart, bottom-right inside the study area.
 		float chart_w <- 700.0;
 		float chart_h <- 260.0;
 		float chart_x <- site_merc.x + study_half_size - chart_w - 80.0;
-		aqi_chart(
-			origin:    { chart_x, panel_y, 0.0 },
-			title_pos: { chart_x, panel_y + chart_h + 60.0, 0.0 },
-			value_pos: { chart_x + chart_w, panel_y + chart_h - 30.0, 0.0 },
-			state_pos: { chart_x + chart_w, panel_y + chart_h - 85.0, 0.0 },
-			w: chart_w,
-			h: chart_h
-		);
+		create aqi_chart with: [
+			origin:: { chart_x, panel_y, 0.0 },
+			title_pos:: { chart_x, panel_y + chart_h + 60.0, 0.0 },
+			value_pos:: { chart_x + chart_w, panel_y + chart_h - 30.0, 0.0 },
+			state_pos:: { chart_x + chart_w, panel_y + chart_h - 85.0, 0.0 },
+			w::chart_w,
+			h::chart_h
+		];
 
 		vehicles_created <- length(car_random) + length(motorbike_random)
 		                  + length(bus_random) + length(lorry_random);
@@ -530,10 +581,10 @@ global {
 		// Bank this cycle's emission, then clear it. The collectors hold
 		// a running total, so summing them without clearing would count
 		// the same grams again on every cycle.
-		pm_total <- pm_total + sum(car_random.collected_pm) + sum(motorbike_random.collected_pm)
-		          + sum(bus_random.collected_pm) + sum(lorry_random.collected_pm);
-		nox_total <- nox_total + sum(car_random.collected_nox) + sum(motorbike_random.collected_nox)
-		          + sum(bus_random.collected_nox) + sum(lorry_random.collected_nox);
+		pm_total <- pm_total + sum(car_random collect each.collected_pm) + sum(motorbike_random collect each.collected_pm)
+		          + sum(bus_random collect each.collected_pm) + sum(lorry_random collect each.collected_pm);
+		nox_total <- nox_total + sum(car_random collect each.collected_nox) + sum(motorbike_random collect each.collected_nox)
+		          + sum(bus_random collect each.collected_nox) + sum(lorry_random collect each.collected_nox);
 		ask car_random + motorbike_random + bus_random + lorry_random {
 			self.collected_pm <- 0.0;
 			self.collected_nox <- 0.0;
@@ -551,7 +602,7 @@ global {
 	// One screen refresh per simulated minute, driven by the cycle counter so
 	// the readout is independent of how often the AQI reflex runs.
 	reflex tick_clock when: (cycle mod cycles_per_minute = 0) {
-		int sim_minutes <- cycle / cycles_per_minute;
+		int sim_minutes <- int(cycle / cycles_per_minute);
 		string clock <- "Simulated time   "
 		              + string(int(sim_minutes / 60)) + "h "
 		              + string(sim_minutes mod 60) + "m"
@@ -583,7 +634,16 @@ global {
 
 species study_border schedules: [] {
 	aspect default {
-		draw shape.contour + 40 color: #cyan;
+		// Filled translucent body so the measured zone is unmistakable,
+		// plus the outline and a label tying it to the AQI number.
+		draw shape color: rgb(0, 200, 200, 60);
+		draw (shape.contour + 40) color: #cyan;
+		// Label so the box reads as the measured zone, not a stray square:
+		// the AQI number comes from inside this boundary only.
+		draw "2 km study area - AQI measured inside" at: {
+			shape.location.x - shape.width / 2.0 + 60.0,
+			shape.location.y + shape.height / 2.0 - 60.0, 2.0
+		} anchor: #top_left color: #cyan font: font(22);
 	}
 }
 
@@ -592,7 +652,7 @@ species road schedules: [] {
 	string highway;
 
 	aspect default {
-		draw shape + 6.0 color: (world.study_area covers self.shape) ? #grey : #3a3a42;
+		draw (shape + 6.0) color: (world.study_area covers self.shape) ? #grey : rgb(58, 58, 66);
 	}
 }
 
@@ -600,7 +660,7 @@ species building schedules: [] {
 	float depth;
 
 	aspect default {
-		draw shape color: rgb(70, 70, 78) depth: depth border: #000000;
+		draw shape color: rgb(70, 70, 78) depth: depth border: #black;
 	}
 }
 
@@ -649,8 +709,7 @@ species base_vehicle skills: [moving] {
 	}
 
 	aspect base {
-		draw squircle(26.0, 11.0) color: (is_electrical ? #cyan : #orange)
-		     rotate: heading depth: 8.0 border: #000000;
+		draw squircle(26.0, 11.0) color: (is_electrical ? #cyan : #orange) rotate: heading depth: 8.0 border: #black;
 	}
 }
 
@@ -673,9 +732,9 @@ species lorry_random parent: base_vehicle {
 }
 
 species readout schedules: [] {
-	// Overwritten in the experiment's init; defaults only for the compiler.
-	point clock_pos <- {11166200.0, 602200.0, 0.0};
-	point note_pos <- {11166200.0, 602140.0, 0.0};
+	// Overwritten in init with site-anchored positions; defaults only for the compiler.
+	point clock_pos <- {0.0, 0.0, 0.0};
+	point note_pos <- {0.0, 0.0, 0.0};
 	string value <- "";
 
 	action update(string v) {
@@ -690,12 +749,12 @@ species readout schedules: [] {
 }
 
 species aqi_chart schedules: [] {
-	// All five are overwritten in the experiment's init with positions
-	// anchored to site_merc; the values here only keep the compiler happy.
-	point origin <- {11166600.0, 602000.0, 0.0};
-	point title_pos <- {11166600.0, 602400.0, 0.0};
-	point value_pos <- {11167300.0, 602250.0, 0.0};
-	point state_pos <- {11167300.0, 602190.0, 0.0};
+	// All five are overwritten in init with site-anchored positions;
+	// the values here only keep the compiler happy.
+	point origin <- {0.0, 0.0, 0.0};
+	point title_pos <- {0.0, 0.0, 0.0};
+	point value_pos <- {0.0, 0.0, 0.0};
+	point state_pos <- {0.0, 0.0, 0.0};
 	float w <- 700.0;
 	float h <- 260.0;
 	float max_val <- 300.0;
@@ -715,8 +774,7 @@ species aqi_chart schedules: [] {
 	aspect default {
 		// `origin` is the bottom-left of the plot box, so the trace grows
 		// upward from it and AQI 0 sits on the baseline.
-		draw rectangle(w, h) at: { origin.x + w / 2.0, origin.y + h / 2.0, 1.0 }
-		     color: rgb(0, 0, 0, 140) border: #808080;
+		draw rectangle(w, h) at: { origin.x + w / 2.0, origin.y + h / 2.0, 1.0 } color: rgb(0, 0, 0, 140) border: rgb(128, 128, 128);
 		draw "AQI inside the 2 km study area" at: title_pos anchor: #bottom_left
 		     color: #white font: font(24);
 		draw string(int(world.aqi_now)) at: value_pos anchor: #top_right
@@ -730,7 +788,7 @@ species aqi_chart schedules: [] {
 				point p <- { origin.x + w * i / length(history),
 				             origin.y + h * min(1.0, history[i] / max_val), 2.0 };
 				if (previous != nil) {
-					do draw_line(previous, p, 3, world.aqi_color_of(history[i]));
+					do draw_line a: previous b: p thickness: 3 col: world.aqi_color_of(history[i]);
 				}
 				previous <- p;
 			}
@@ -742,7 +800,7 @@ species aqi_chart schedules: [] {
 // EXPERIMENTS
 // ====================================================================
 
-experiment Penang_Demo autorun: true {
+experiment Penang_Demo autorun: true type: gui {
 
 	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
@@ -754,12 +812,15 @@ experiment Penang_Demo autorun: true {
 		layout #split parameters: false navigator: false editors: false consoles: false
 		       toolbars: false tray: false tabs: false controls: true;
 
-		display main type: opengl background: #101014 axes: false {
+		display main type: opengl background: rgb(16, 16, 20) axes: false {
 
-			camera 'default' location: {11167135.0, 603091.0, 9500.0} target: {11167135.0, 603091.0, 0.0};
+			// No explicit camera: GAMA auto-fits the world envelope (the
+			// OSM extract, ~6 km across, in the world CRS). A hardcoded
+			// EPSG:3857 camera would point off-screen since the world CRS
+			// is a local metric projection, not absolute 3857 metres.
 
-			species building;
-			species road;
+			species building refresh: false;
+			species road refresh: false;
 			species study_border;
 			species car_random aspect: base;
 			species motorbike_random aspect: base;
@@ -771,8 +832,8 @@ experiment Penang_Demo autorun: true {
 			mesh pm25_field scale: 1 above: 1 triangulation: true transparency: 0.5
 			     color: scale(zone_colors) smooth: 1;
 
-			overlay position: {30 #px, 30 #px} size: {1 #px, 1 #px} background: #101014
-			       border: #101014 rounded: false {
+			overlay position: {30 #px, 30 #px} size: {1 #px, 1 #px} background: rgb(16, 16, 20)
+			       border: rgb(16, 16, 20) rounded: false {
 				float y <- 20 #px;
 				draw "Penang Air demonstration" at: { 0, y } anchor: #top_left
 				     color: #white font: font(26);
@@ -801,7 +862,7 @@ experiment Penang_Demo autorun: true {
 
 // Headless run, for producing the numbers and figures after the workshop.
 // The same `report` reflex prints a row every simulated minute.
-experiment Penang_Batch autorun: false type: batch until: (cycle > 1800) {
+experiment Penang_Batch autorun: false type: batch until: (cycle >= int(run_minutes * 60)) {
 
 	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;

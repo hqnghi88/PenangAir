@@ -70,8 +70,7 @@ PenangAir/
 │   ├── penang_roads.*        656 road segments (NAME, HIGHWAY)
 │   └── penang_buildings.*    1,090 footprints, used as a backdrop only
 ├── images/                   vehicle textures and building textures
-├── PenangAir_model_and_guide.docx        full model documentation
-└── Penang Air demonstration.docx          workshop brief
+└── PenangAir_model_and_guide.docx        full model documentation
 ```
 
 ## Study area
@@ -98,7 +97,6 @@ Anything above ~1004 m is a no-op. At 300 m the network is too sparse to show tr
   actually computes: the modelling framework, the survey-to-fleet derivation, agent dynamics, the emission
   and field model, the observation layer, verification status, and limitations. Written for readers already
   familiar with GAMA and agent-based modelling.
-- **[Penang Air demonstration.docx](Penang%20Air%20demonstration.docx)** — workshop brief.
 
 ## Read this before quoting any number
 

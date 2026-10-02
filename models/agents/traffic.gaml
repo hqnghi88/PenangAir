@@ -137,34 +137,86 @@ species api_loader skills: [thread] {
 
 	}
 
-	action loadtraffic() {
-		ask traffic_incident {
-			do die;
-		}
-
-		// No keyless realtime incident feed exists (the old Bing Maps key is
-		// dead and was hardcoded to Hanoi), so incidents are derived from the
-		// simulation itself: the most-loaded roads become live congestion
-		// incidents. Each incident keeps spawning dummy_car flow through the
-		// existing traffic_incident reflex, like the API ones used to.
-		map<road, int> load <- road as_map (each::length(vehicle_random overlapping (each.shape + 12.0)));
-		list<road> ordered <- list<road>(road sort_by (load[each]));
-		int made <- 0;
-		loop k from: 0 to: length(ordered) - 1 {
-			road r <- ordered[length(ordered) - 1 - k];
-			if (load[r] >= 3 and made < 5) {
-				create traffic_incident with: [
-					location::r.shape.location,
-					description::("congestion x" + string(load[r]) + " on " + string(r.shape.location))
-				];
-				made <- made + 1;
+		action loadtraffic() {
+			ask traffic_incident {
+				do die;
 			}
-		}
-		ask (param_indicator where (each.name = lb_Traffic_Incident)) {
-			do update(string(made) + " live congestion incidents @ " + date("now"));
-		}
 
-	}
+			int made <- 0;
+			// Try to fetch real traffic data from free public APIs first
+			// Try multiple free real-time sources
+			list<string> urls <- [
+				"https://malaysiatransit.techmavie.digital/api/realtime?area=penang",
+				"https://api.data.gov.my/gtfs-realtime/vehicle-position/prasarana?category=rapid-bus-penang"
+			];
+			loop url over: urls {
+				if (made > 0) { break; }
+				try {
+					json_file j <- json_file(url);
+					map<string, unknown> data <- j.contents;
+					if (data != nil) {
+						list<unknown> vehicles <- data["vehicles"];
+						if (vehicles = nil) { vehicles <- data["data"]; }
+						if (vehicles = nil and data["entity"] != nil) { vehicles <- data["entity"]; } // GTFS-RT style
+						if (vehicles != nil and length(vehicles) > 0) {
+							int vcount <- 0;
+							loop v over: vehicles {
+								if (vcount >= 15 or made >= 5) { break; }
+								map<string, unknown> veh <- map<string, unknown>(v);
+								// Try common JSON shapes
+								if (veh["lat"] != nil and veh["lng"] != nil) {
+									float lat <- float(veh["lat"]);
+									float lng <- float(veh["lng"]);
+									point p <- to_GAMA_CRS({lng, lat}, "EPSG:4326").location;
+									if (p != nil) {
+										create traffic_incident with: [location::p, description::("real traffic @ " + string(int(lat*10000))/10000.0 + "," + string(int(lng*10000))/10000.0)];
+										made <- made + 1;
+									}
+								} else if (veh["vehicle"] != nil) {
+									map<string, unknown> vinfo <- map<string, unknown>(veh["vehicle"]);
+									map<string, unknown> pos <- map<string, unknown>(vinfo["position"]);
+									if (pos != nil and pos["latitude"] != nil and pos["longitude"] != nil) {
+										float lat <- float(pos["latitude"]);
+										float lng <- float(pos["longitude"]);
+										point p <- to_GAMA_CRS({lng, lat}, "EPSG:4326").location;
+										if (p != nil) {
+											create traffic_incident with: [location::p, description::("real GTFS-RT")];
+											made <- made + 1;
+										}
+									}
+								}
+								vcount <- vcount + 1;
+							}
+						}
+					}
+				} catch {
+					// try next source
+				}
+			}
+			if (made = 0) {
+				write "Real traffic APIs unavailable, falling back to simulation-based incidents.";
+			}
+
+			// Fallback to simulation-derived incidents if no real data fetched
+			if (made = 0) {
+				map<road, int> load <- road as_map (each::length(vehicle_random overlapping (each.shape + 12.0)));
+				list<road> ordered <- list<road>(road sort_by (load[each]));
+				loop k from: 0 to: length(ordered) - 1 {
+					road r <- ordered[length(ordered) - 1 - k];
+					if (load[r] >= 3 and made < 5) {
+						create traffic_incident with: [
+							location::r.shape.location,
+							description::("congestion x" + string(load[r]) + " on " + string(r.shape.location))
+						];
+						made <- made + 1;
+					}
+				}
+			}
+			ask (param_indicator where (each.name = lb_Traffic_Incident)) {
+				do update(string(made) + " live traffic incidents @ " + date("now"));
+			}
+
+		}
 
 	//	reflex sss {
 	//		if (end - start > 600) {

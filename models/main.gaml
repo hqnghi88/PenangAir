@@ -635,8 +635,8 @@ species study_boundary {
 		// very heat map the box frames, and `draw` in this GAMA version takes
 		// no `transparency` facet while `border` wants an rgb or a bool, not a
 		// thickness. The buffered second contour is what gives the line weight.
-		draw shape.contour color: #white;
-		draw shape.contour + 3 color: #white;
+		draw shape.contour color: #blue-100;
+		draw shape.contour + 3 color: #blue-100;
 	}
 
 }

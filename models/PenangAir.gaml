@@ -190,8 +190,8 @@ experiment MainExp autorun: false {
 			// Penang: the Hanoi camera and the two vindark.png raster
 			// mini-maps were removed (Hanoi imagery/coordinates); the panels
 			// below are positioned from world.shape instead.
-			species road refresh: false position: {0, 0, 0.02};
-			species study_boundary position: {0, 0, 0.015};
+			species road refresh: false;// position: {0, 0, 0.0002};
+			species study_boundary;// position: {0, 0, 0.0015};
 			species building refresh: false;
 			species car_random;
 			species dummy_car aspect: base;

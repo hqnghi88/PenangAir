@@ -169,7 +169,7 @@ species api_loader skills: [thread] {
 									float lng <- float(veh["lng"]);
 									point p <- to_GAMA_CRS({lng, lat}, "EPSG:4326").location;
 									if (p != nil) {
-										create traffic_incident with: [location::p, description::("real traffic @ " + string(int(lat*10000))/10000.0 + "," + string(int(lng*10000))/10000.0)];
+										create traffic_incident with: [location::p, description::("real traffic @ " + string(int(lat*10000)/10000.0) + "," + string(int(lng*10000)/10000.0))];
 										made <- made + 1;
 									}
 								} else if (veh["vehicle"] != nil) {

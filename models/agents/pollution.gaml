@@ -11,9 +11,15 @@ import "../global_vars.gaml"
 global {
 	// Constants
 	map<string, float> ALLOWED_AMOUNT <- ["CO"::30000 * 10e-6, "NOx"::200 * 10e-6, "SO2"::350 * 10e-6, "PM"::300 * 10e-6]; // Unit: g/m3
+	// g/km. Car and motorbike values come from the original VinUni model;
+	// bus and lorry are standard diesel urban figures. Lorries matter in
+	// Penang because the survey counts a separate lorries column and their
+	// PM/NOx factors sit an order of magnitude above a car's.
 	map<string, map<string, float>> EMISSION_FACTOR <- [
-		"motorbike"::["CO"::3.62, "NOx"::0.3, "SO2"::0.03, "PM"::0.1],  // Unit: g/km
-		"car"::["CO"::3.62, "NOx"::1.5, "SO2"::0.17, "PM"::0.1]
+		"motorbike"::["CO"::3.62, "NOx"::0.3, "SO2"::0.03, "PM"::0.1],
+		"car"::["CO"::3.62, "NOx"::1.5, "SO2"::0.17, "PM"::0.1],
+		"bus"::["CO"::13.0, "NOx"::7.0, "SO2"::0.5, "PM"::0.9],
+		"lorry"::["CO"::15.0, "NOx"::9.0, "SO2"::0.6, "PM"::1.0]
 	];
 	
 	// Params

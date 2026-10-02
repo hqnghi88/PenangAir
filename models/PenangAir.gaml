@@ -1,877 +1,247 @@
 /***
-* Name: PenangAir
-* Author: adapted from VinUniAir (minhduc0711) for the Penang Air demonstration
-* Description: Single-file GAMA model that turns street-level traffic counts into
-*               an air-pollution demonstration for a non-specialist workshop.
-*               Roads and buildings come from OpenStreetMap; vehicle populations
-*               come from a simple CSV of survey counts.
-* Tags: air pollution, AQI, traffic, OSM, workshop, Penang
+* Name: mainroadcells
+* Author: minhduc0711
+* Description: 
+* Tags: Tag1, Tag2, TagN
 ***/
+model main
 
-model PenangAir
+import "main.gaml"
 
 global {
-
-	// ==================================================================
-	// 1. SITE AND STUDY AREA
-	// ==================================================================
-	// Demonstration site, given as 5 deg 24'34.6"N  100 deg 18'57.9"E
-	// (George Town, Penang, near Jalan Prangin / Lebuh Acheh).
-	// GAMA points are {lon, lat} in EPSG:4326. GAMA already projects the
-	// OSM file into the world CRS on load (metric, ~6 km extent), so the
-	// site is brought into that same space with to_GAMA_CRS -- do NOT use
-	// a manual CRS_transform here (GeoTools has no 4326->3857 transform in
-	// this build and envelope(osmfile) is already projected).
-	point site_4326 <- {100.316083, 5.409611};
-	// Computed in init (the world projection is not ready at global
-	// declaration time, so a declaration-time to_GAMA_CRS can land the
-	// study box off the network and seed zero vehicles).
-	point site_merc;
-	float study_half_size <- 1000.0;
-	geometry study_area;
-
-	// Half-width of the square study area, in metres. 1000 => 2 km x 2 km.
-	// This is the one number worth arguing about with the team: big enough to
-	// hold a real junction and its approaches, small enough that a workshop
-	// crowd can follow every vehicle on screen.
-	// (study_half_size and study_area are declared above; study_area is
-	// built in init once the projection is ready).
-
-	// The OSM extract is cropped to the study area itself (2 km x 2 km),
-	// so the display frames the measured zone with no empty margins.
-	// Only the study area is measured and reported.
-	//
-	// study_samples is the sampling resolution of the peak-concentration
-	// search, not the diffusion resolution.
-	int study_samples <- 24;
-
-	// ==================================================================
-	// 2. DATA
-	// ==================================================================
-	// Everything is measured in the world CRS in metres (GAMA projects the
-	// OSM file on load), the same metric setup the VinUni model uses with
-	// its Pseudo-Mercator shapefiles, so sizes, speeds and areas are real units.
-	string osm_path <- "../includes/penang.osm";
-	string counts_path <- "../includes/traffic_counts.csv";
-
-	// OSM tag filter. An empty list means "any value of this key".
-	map<string, list> osm_filter <- map([
-		"highway"::["motorway", "trunk", "primary", "secondary", "tertiary",
-		            "unclassified", "residential", "living_street"],
-		"building"::[]
-	]);
-
-	file<geometry> osmfile <- file<geometry>(osm_file(osm_path, osm_filter));
-	// envelope(osmfile) is already in the world CRS (metric). This matches
-	// the OSM reference models (OSM File Import / OSM Loading Driving),
-	// which all use `geometry shape <- envelope(osmfile);` with no manual
-	// CRS conversion.
-	geometry shape <- envelope(osmfile);
-
-	// ==================================================================
-	// 3. SIMULATION CLOCK
-	// ==================================================================
-	// One simulated second per cycle, so one cycle is one second of traffic.
 	float step <- 1 #s;
-	// Cycles per simulated minute, used for the on-screen clock.
-	int cycles_per_minute <- 60;
-	float run_minutes <- 30.0;
-
-	// ==================================================================
-	// 4. TRAFFIC -> VEHICLES
-	// ==================================================================
-	// Survey volumes are peak-hour one-way flows in veh/h. A road never holds
-	// that many vehicles at once, so we use Little's Law:
-	//
-	//     vehicles on a road = flow (veh/h) x time to cross it (hours)
-	//
-	// This is the only place where survey numbers become agents, and it is one
-	// line long so it can be explained on a whiteboard.
-	float fleet_scale <- 1.0;
-	int max_vehicles <- 900;
-
-	// Free-flow speed by road class (km/h), used for the Little's Law term.
-	map<string, float> class_speed <- [
-		"motorway"::80.0, "trunk"::50.0, "primary"::40.0, "secondary"::35.0,
-		"tertiary"::30.0, "unclassified"::25.0, "residential"::25.0, "living_street"::15.0
-	];
-
-	// Tailpipe emission factors in g/km. Car and motorcycle values are the ones
-	// already used in the VinUni model; bus and lorry are standard diesel urban
-	// values and are the only genuinely new numbers here. They are
-	// order-of-magnitude figures for teaching, not certified factors.
-	map<string, float> emission_pm <- [
-		"car"::0.10, "motorbike"::0.10, "bus"::0.90, "lorry"::1.00
-	];
-	map<string, float> emission_nox <- [
-		"car"::1.50, "motorbike"::0.30, "bus"::7.00, "lorry"::9.00
-	];
-
-	// Share of the fleet converted to electric. Zero tailpipe emissions, but
-	// non-exhaust PM (brake and tyre wear, road dust) is not modelled, so this
-	// is a lower bound rather than a real zero.
-	float electric_share <- 0.0;
-
-	// ==================================================================
-	// 5. POLLUTION FIELD AND AQI
-	// ==================================================================
-	int field_size <- 300;
-	field pm25_field <- field(field_size, field_size, 0.0);
-
-	// Diffusion kernel, aligned with VinUniAir main2.gaml mat_diff:
-	// centre = 3/5 * pollutant_decay_rate, neighbours = 1/20 each, so the
-	// total is 0.6*decay + 0.4 < 1.0 and mass decays slowly instead of
-	// accumulating forever over a 30-minute workshop run.
-	float pollutant_decay_rate <- 0.99;
-	matrix<float> diffusion_kernel <- matrix([
-		[1.0 / 20.0, 1.0 / 20.0, 1.0 / 20.0],
-		[1.0 / 20.0, 0.60 * pollutant_decay_rate, 1.0 / 20.0],
-		[1.0 / 20.0, 1.0 / 20.0, 1.0 / 20.0]
-	]);
-
-	// Turning grams of PM dropped in one cell into a concentration.
-	// A cell holds cell_area m2 of ground; mixing it through pm_mix_height metres
-	// of air gives cell_area * pm_mix_height m3, so the concentration in
-	// micrograms per cubic metre is grams * 1e6 / (cell_area * pm_mix_height).
-	// pm_mix_height is an effective dilution depth, not a measured boundary
-	// layer: raising it is the same as saying the pollution is better mixed.
-	float pm_mix_height <- 80.0;
-	float cell_area;
-	float pm_scale;
-
-	// The field above is a physically shaped estimate, but it is still NOT a
-	// measurement. One constant converts it to a PM2.5-equivalent
-	// concentration, and the AQI below follows the US EPA PM2.5 breakpoints.
-	//
-	// pm25_calibration MUST be fitted against one real monitoring station
-	// before any absolute AQI number is quoted or published. The spatial and
-	// temporal pattern, and every comparison between two runs, do not depend
-	// on it.
-	float pm25_calibration <- 1.0;
-
-	// AQI category boundaries (US EPA, 24-hour PM2.5).
-	map<int, string> aqi_band <- [
-		0::"Good",
-		51::"Moderate",
-		101::"Unhealthy for sensitive groups",
-		151::"Unhealthy",
-		201::"Very unhealthy",
-		301::"Hazardous"
-	];
-
-	// Colours used for the pollution mesh.
-	map<rgb, int> zone_colors <- [
-		#green::0,
-		#yellow::5,
-		#orange::10,
-		#red::15,
-		rgb(116, 49, 121)::20,
-		rgb(66, 18, 39)::30
-	];
-
-	// Live outputs for the workshop audience.
-	float aqi_now <- 0.0;
-	string aqi_state <- "Good";
-	float nox_total <- 0.0;
-	float pm_total <- 0.0;
-
-	graph road_network;
-	map<road, float> road_weights;
-
-	int roads_loaded <- 0;
-	int buildings_loaded <- 0;
-	int vehicles_created <- 0;
-	int matched_roads <- 0;
-	int default_roads <- 0;
-
-	// ==================================================================
-	// 6. HELPERS
-	// ==================================================================
-
-	// First n elements of a list, as a new list. Used to scale the fleet down
-	// to the cap while preserving the order the segments were added in.
-	list<geometry> keep_leading(list<geometry> source, int n) {
-		list<geometry> out <- list<geometry>();
-		int last <- min(n, length(source)) - 1;
-		if (last >= 0) {
-			loop i from: 0 to: last {
-				add item: source[i] to: out;
-			}
-		}
-		return out;
-	}
-
-	// Survey spreadsheets arrive with blank cells. Treat a blank as zero
-	// rather than letting the model die on a conversion error.
-	int count_of(string s) {
-		if (s = nil) { return 0; }
-		string t <- trim(s);
-		if (t = "") { return 0; }
-		return int(t);
-	}
-
-	// US EPA PM2.5 breakpoints, linear inside each band.
-	float aqi_from_index(float index) {
-		float c <- index * pm25_calibration;   // PM2.5-equivalent, ug/m3
-		if (c <= 9.0) { return c * 50.0 / 9.0; }
-		if (c <= 35.4) { return 50.0 + (c - 9.0) * 50.0 / 26.4; }
-		if (c <= 55.4) { return 100.0 + (c - 35.4) * 50.0 / 20.0; }
-		if (c <= 125.4) { return 150.0 + (c - 55.4) * 50.0 / 70.0; }
-		if (c <= 225.4) { return 200.0 + (c - 125.4) * 100.0 / 100.0; }
-		return 300.0 + (c - 225.4) * 200.0 / 250.4;
-	}
-
-	string aqi_band_of(float aqi) {
-		string state <- "Good";
-		loop b over: aqi_band.pairs {
-			if (aqi >= b.key) { state <- b.value; }
-		}
-		return state;
-	}
-
-	rgb aqi_color_of(float aqi) {
-		if (aqi < 51) { return #green; }
-		if (aqi < 101) { return #yellow; }
-		if (aqi < 151) { return #orange; }
-		if (aqi < 201) { return #red; }
-		if (aqi < 301) { return rgb(116, 49, 121); }
-		return rgb(66, 18, 39);
-	}
-
-	// Peak index inside the study area only, so traffic outside the
-	// demonstration window cannot set the headline number.
-	float peak_index_in_study_area {
-		float peak <- 0.0;
-		float dx <- 2.0 * study_half_size / study_samples;
-		float dy <- 2.0 * study_half_size / study_samples;
-		float x0 <- site_merc.x - study_half_size;
-		float y0 <- site_merc.y - study_half_size;
-		loop i from: 0 to: study_samples - 1 {
-			loop j from: 0 to: study_samples - 1 {
-				float v <- pm25_field[{ x0 + i * dx, y0 + j * dy }];
-				if (v > peak) { peak <- v; }
-			}
-		}
-		return peak;
-	}
-
-	// ==================================================================
-	// 7. SET UP
-	// ==================================================================
-	init {
-		// Study box first: the projection is ready now, so to_GAMA_CRS
-		// lands the site in the same space as the OSM geometries.
-		site_merc <- to_GAMA_CRS(site_4326, "EPSG:4326").location;
-		study_area <- square(2.0 * study_half_size) at_location site_merc;
-		write "site_merc: " + string(site_merc) + "  world shape: " + string(shape)
-		    + "  study_area covers world centre: " + string(study_area covers shape.location);
-		write "study_area width: " + string(study_area.width) + " height: " + string(study_area.height)
-		    + " area: " + string(study_area.area) + " (expect 2000 x 2000, area 4000000)";
-
-		cell_area <- (shape.width / field_size) * (shape.height / field_size);
-		pm_scale <- 1000000.0 / (cell_area * pm_mix_height);
-
-		// --- roads and buildings out of the OSM file ---
-		// The OSM reader splits every way at its junctions, so one street
-		// arrives here as many short segments that share endpoints. That is
-		// exactly what the routing graph needs, and it is also why the
-		// Little's Law term below uses each segment's own length.
-		loop geom over: osmfile {
-			string highway_str <- string(geom get ("highway"));
-			string building_str <- string(geom get ("building"));
-
-			if (highway_str != nil) {
-				if (length(geom.points) > 1) {
-					// geom is already in the world CRS (GAMA projects the
-					// OSM file on load); use it directly, no CRS_transform.
-					create road(
-						shape: geom,
-						road_name: string(geom get ("name")),
-						highway: highway_str
-					) {
-						// Belt and braces: the OSM reader already drops these.
-						if (self.shape.perimeter < 1.0) { do die; }
-					}
-				}
-			} else {
-				if (building_str != nil) {
-					if (length(geom.points) > 2) {
-						create building(shape: geom) {
-							depth <- 6.0 + rnd(24.0);
-						}
-					}
-				}
-			}
-		}
-
-		roads_loaded <- length(road);
-		buildings_loaded <- length(building);
-
-		// Cropping the OSM file to the study box cuts streets at the border
-		// and leaves isolated fragments. A vehicle seeded on a fragment can
-		// never route to the rest of the map, so keep only the main
-		// connected component (by segment count) and drop the rest before
-		// the routing graph is built.
-		graph full_network <- as_edge_graph(road);
-		list main_roads <- [];
-		loop comp over: connected_components_of(full_network, true) {
-			if (length(comp) > length(main_roads)) { main_roads <- list(comp); }
-		}
-		int dropped_roads <- length(road) - length(main_roads);
-		if (dropped_roads > 0) {
-			ask (road - main_roads) { do die; }
-		}
-		write "Road network: " + string(roads_loaded) + " segments loaded, "
-		    + string(length(main_roads)) + " kept in the main component, "
-		    + string(dropped_roads) + " isolated fragments removed.";
-
-		// Route preferentially along longer roads so vehicles use the main
-		// streets rather than every service lane equally.
-		road_weights <- road as_map (each::each.shape.perimeter);
-		road_network <- as_edge_graph(road);
-
-		// --- survey counts ---
-		// The field team only has to label counts by the street they stood on.
-		// Column order is fixed and documented in the README:
-		//   0 road_name, 1 highway, 2 length_m, 3 cars, 4 buses,
-		//   5 lorries, 6 motorcycles
-		// length_m is informational and is not read: each OSM segment already
-		// carries its own length, and that is the length Little's Law needs.
-		file counts_file <- csv_file(counts_path, true);
-		matrix counts <- matrix(counts_file);
-		int first_row <- 0;
-		if (string(counts[0, 0]) = "road_name") { first_row <- 1; }
-
-		map<string, int> cars_by_name <- map<string, int>();
-		map<string, int> buses_by_name <- map<string, int>();
-		map<string, int> lorries_by_name <- map<string, int>();
-		map<string, int> bikes_by_name <- map<string, int>();
-		map<string, int> cars_by_class <- map<string, int>();
-		map<string, int> buses_by_class <- map<string, int>();
-		map<string, int> lorries_by_class <- map<string, int>();
-		map<string, int> bikes_by_class <- map<string, int>();
-		map<string, int> segments_by_class <- map<string, int>();
-
-		// GAMA runs `from: a to: b` backwards when a > b, so guard the loop
-		// so an empty table (rows after the header = 0) runs zero times.
-		if (counts.rows > first_row) {
-			loop i from: first_row to: counts.rows - 1 {
-				string nm <- string(counts[0, i]);
-				string hw <- string(counts[1, i]);
-				int c_n <- count_of(string(counts[3, i]));
-				int b_n <- count_of(string(counts[4, i]));
-				int l_n <- count_of(string(counts[5, i]));
-				int m_n <- count_of(string(counts[6, i]));
-
-				cars_by_name[nm] <- c_n;
-				buses_by_name[nm] <- b_n;
-				lorries_by_name[nm] <- l_n;
-				bikes_by_name[nm] <- m_n;
-
-				// Class totals are used as per-segment fallbacks for unnamed
-				// lanes, so count the segments per class to divide later.
-				//
-				// `k in some_map` tests VALUES in GAMA, not keys (GamaMap
-				// .contains delegates to containsValue), so key membership
-				// has to be tested against the .keys list.
-				bool have_class <- hw in segments_by_class.keys;
-				if (have_class) {
-					segments_by_class[hw] <- segments_by_class[hw] + 1;
-					cars_by_class[hw] <- cars_by_class[hw] + c_n;
-					buses_by_class[hw] <- buses_by_class[hw] + b_n;
-					lorries_by_class[hw] <- lorries_by_class[hw] + l_n;
-					bikes_by_class[hw] <- bikes_by_class[hw] + m_n;
-				} else {
-					segments_by_class[hw] <- 1;
-					cars_by_class[hw] <- c_n;
-					buses_by_class[hw] <- b_n;
-					lorries_by_class[hw] <- l_n;
-					bikes_by_class[hw] <- m_n;
-				}
-			}
-		}
-
-		// --- place vehicles on the roads, using Little's Law ---
-		// One geometry per vehicle. `from:` assigns each geometry to the shape
-		// of the agent it creates, which is how a vehicle knows which segment
-		// it was seeded on.
-		list<geometry> car_spots <- list<geometry>();
-		list<geometry> bus_spots <- list<geometry>();
-		list<geometry> lorry_spots <- list<geometry>();
-		list<geometry> bike_spots <- list<geometry>();
-
-		// Fractional carry, so rounding each road down does not quietly delete
-		// most of the fleet on short segments.
-		float carry_car <- 0.0;
-		float carry_bus <- 0.0;
-		float carry_lorry <- 0.0;
-		float carry_bike <- 0.0;
-
-		loop r over: road {
-			if (study_area covers r.shape) {
-				// Little's Law per segment. The surveyed flow applies along the
-				// whole street, and a segment's share of the vehicles in
-				// transit is its share of the crossing time, i.e. its length
-				// over speed. The OSM reader cuts a street into segments at its
-				// junctions, so summing this over the segments of one street
-				// recovers the single-street result: flow * length / speed.
-				bool known_class <- r.highway in class_speed.keys;
-				float v_kmh <- known_class ? class_speed[r.highway] : 25.0;
-				float crossing_h <- (r.shape.perimeter / 1000.0) / v_kmh;
-
-				bool named <- (r.road_name != nil) and (r.road_name in cars_by_name.keys);
-				if (named) { matched_roads <- matched_roads + 1; } else { default_roads <- default_roads + 1; }
-
-				// Unnamed lanes fall back to the mean of their road class,
-				// spread over however many segments that class has.
-				int c_vol <- 0;
-				int b_vol <- 0;
-				int l_vol <- 0;
-				int m_vol <- 0;
-				if (named) {
-					c_vol <- cars_by_name[r.road_name];
-					b_vol <- buses_by_name[r.road_name];
-					l_vol <- lorries_by_name[r.road_name];
-					m_vol <- bikes_by_name[r.road_name];
-				} else {
-					// Mean per segment for this road class. counted is false when the
-					// class never appears in the CSV at all.
-					bool counted <- r.highway in segments_by_class.keys;
-					int n_seg <- counted ? segments_by_class[r.highway] : 1;
-					c_vol <- counted ? int(cars_by_class[r.highway] / n_seg) : 100;
-					b_vol <- counted ? int(buses_by_class[r.highway] / n_seg) : 4;
-					l_vol <- counted ? int(lorries_by_class[r.highway] / n_seg) : 8;
-					m_vol <- counted ? int(bikes_by_class[r.highway] / n_seg) : 90;
-				}
-
-				float raw_car <- c_vol * crossing_h * fleet_scale + carry_car;
-				float raw_bus <- b_vol * crossing_h * fleet_scale + carry_bus;
-				float raw_lorry <- l_vol * crossing_h * fleet_scale + carry_lorry;
-				float raw_bike <- m_vol * crossing_h * fleet_scale + carry_bike;
-
-				int n_car <- int(raw_car);
-				int n_bus <- int(raw_bus);
-				int n_lorry <- int(raw_lorry);
-				int n_bike <- int(raw_bike);
-				carry_car <- raw_car - n_car;
-				carry_bus <- raw_bus - n_bus;
-				carry_lorry <- raw_lorry - n_lorry;
-				carry_bike <- raw_bike - n_bike;
-
-				// The n > 0 guards matter. A GAMA `from: a to: b` loop runs
-				// backwards when a > b, so `from: 1 to: 0` executes twice
-				// instead of never.
-				if (n_car > 0) {
-					loop j from: 1 to: n_car { add item: r.shape to: car_spots; }
-				}
-				if (n_bus > 0) {
-					loop j from: 1 to: n_bus { add item: r.shape to: bus_spots; }
-				}
-				if (n_lorry > 0) {
-					loop j from: 1 to: n_lorry { add item: r.shape to: lorry_spots; }
-				}
-				if (n_bike > 0) {
-					loop j from: 1 to: n_bike { add item: r.shape to: bike_spots; }
-				}
-			}
-		}
-
-		// Keep the demo interactive on modest workshop hardware. If the
-		// surveyed fleet is larger than max_vehicles, scale every class down
-		// by the same factor so the vehicle mix is preserved.
-		int total_spots <- length(car_spots) + length(bus_spots)
-		                + length(lorry_spots) + length(bike_spots);
-		write "roads in study area: " + string(matched_roads + default_roads)
-		    + " of " + string(roads_loaded) + "  |  raw vehicle spots: " + string(total_spots)
-		    + " (cars " + string(length(car_spots)) + ", bikes " + string(length(bike_spots))
-		    + ", buses " + string(length(bus_spots)) + ", lorries " + string(length(lorry_spots)) + ")";
-		if (total_spots > max_vehicles and total_spots > 0) {
-			float cap <- max_vehicles * 1.0 / total_spots;
-			car_spots <- keep_leading(car_spots, int(length(car_spots) * cap));
-			bus_spots <- keep_leading(bus_spots, int(length(bus_spots) * cap));
-			lorry_spots <- keep_leading(lorry_spots, int(length(lorry_spots) * cap));
-			bike_spots <- keep_leading(bike_spots, int(length(bike_spots) * cap));
-		}
-
-		create car_random from: car_spots with: [type:: "car"];
-		create bus_random from: bus_spots with: [type:: "bus"];
-		create lorry_random from: lorry_spots with: [type:: "lorry"];
-		create motorbike_random from: bike_spots with: [type:: "motorbike"];
-
-		// Give a share of the fleet an electric powertrain.
-		if (electric_share > 0.0) {
-			ask (int(electric_share * length(car_random)) among car_random) { is_electrical <- true; }
-			ask (int(electric_share * length(motorbike_random)) among motorbike_random) { is_electrical <- true; }
-			ask (int(electric_share * length(bus_random)) among bus_random) { is_electrical <- true; }
-			ask (int(electric_share * length(lorry_random)) among lorry_random) { is_electrical <- true; }
-		}
-
-		// Outline of the study area, so the audience always sees the boundary.
-		create study_border with: [shape::study_area];
-
-		// On-screen furniture is anchored to the site, not to the world
-		// origin, so it stays inside the camera view whatever CRS the
-		// world uses.
-		float panel_x <- site_merc.x - study_half_size + 80.0;
-		float panel_y <- site_merc.y - study_half_size + 80.0;
-
-		// Clock readout, bottom-left inside the study area.
-		create readout with: [
-			clock_pos::{ panel_x, panel_y + 130.0, 0.0 },
-			note_pos::{ panel_x, panel_y + 70.0, 0.0 }
-		];
-
-		// AQI chart, bottom-right inside the study area.
-		float chart_w <- 700.0;
-		float chart_h <- 260.0;
-		float chart_x <- site_merc.x + study_half_size - chart_w - 80.0;
-		create aqi_chart with: [
-			origin:: { chart_x, panel_y, 0.0 },
-			title_pos:: { chart_x, panel_y + chart_h + 60.0, 0.0 },
-			value_pos:: { chart_x + chart_w, panel_y + chart_h - 30.0, 0.0 },
-			state_pos:: { chart_x + chart_w, panel_y + chart_h - 85.0, 0.0 },
-			w::chart_w,
-			h::chart_h
-		];
-
-		vehicles_created <- length(car_random) + length(motorbike_random)
-		                  + length(bus_random) + length(lorry_random);
-
-		write "Study area: " + string(int(2.0 * study_half_size)) + " m x "
-		    + string(int(2.0 * study_half_size)) + " m centred on the site";
-		write "Roads loaded: " + string(roads_loaded) + "   Buildings loaded: " + string(buildings_loaded);
-		write "Roads using survey counts: " + string(matched_roads)
-		    + "   segments using class defaults: " + string(default_roads);
-		write "Vehicles created: " + string(vehicles_created)
-		    + "  (cars " + string(length(car_random))
-		    + ", motorbikes " + string(length(motorbike_random))
-		    + ", buses " + string(length(bus_random))
-		    + ", lorries " + string(length(lorry_random)) + ")";
-		if (electric_share > 0.0) {
-			write "Electric share: " + string(int(electric_share * 100.0)) + "%";
-		}
-		write "Pollution cell: " + string(int(cell_area)) + " m2, effective mixing depth "
-		    + string(int(pm_mix_height)) + " m";
-		write "NOTE: the AQI shown is NOT calibrated. Fit pm25_calibration against a real";
-		write "      monitoring station before quoting any absolute AQI number.";
-	}
-
-	// ==================================================================
-	// 8. RUNNING THE MODEL
-	// ==================================================================
-	reflex spread_pollution {
-		// `var` is the omissible first facet, so the bare string is the
-		// variable name. Over a field it only identifies the diffusion.
-		diffuse "pm25" on: pm25_field matrix: diffusion_kernel;
-	}
-
-	reflex emit_pollution {
-		ask car_random + motorbike_random + bus_random + lorry_random {
-			// Distance covered during the last cycle, in km.
-			float km <- self.travelled / 1000.0;
-			self.travelled <- 0.0;
-			if (km > 0.0) {
-				float power <- is_electrical ? 0.0 : 1.0;
-				float pm <- km * world.emission_pm[type] * power;
-				self.collected_pm <- self.collected_pm + pm;
-				self.collected_nox <- self.collected_nox + km * world.emission_nox[type] * power;
-				pm25_field[location] <- pm25_field[location] + pm * world.pm_scale;
-			}
-		}
-		// Bank this cycle's emission, then clear it. The collectors hold
-		// a running total, so summing them without clearing would count
-		// the same grams again on every cycle.
-		pm_total <- pm_total + sum(car_random collect each.collected_pm) + sum(motorbike_random collect each.collected_pm)
-		          + sum(bus_random collect each.collected_pm) + sum(lorry_random collect each.collected_pm);
-		nox_total <- nox_total + sum(car_random collect each.collected_nox) + sum(motorbike_random collect each.collected_nox)
-		          + sum(bus_random collect each.collected_nox) + sum(lorry_random collect each.collected_nox);
-		ask car_random + motorbike_random + bus_random + lorry_random {
-			self.collected_pm <- 0.0;
-			self.collected_nox <- 0.0;
-		}
-	}
-
-	reflex measure_aqi when: every(5 #cycle) {
-		aqi_now <- aqi_from_index(peak_index_in_study_area());
-		aqi_state <- aqi_band_of(aqi_now);
-		ask aqi_chart {
-			do update(world.aqi_now);
-		}
-	}
-
-	// One screen refresh per simulated minute, driven by the cycle counter so
-	// the readout is independent of how often the AQI reflex runs.
-	reflex tick_clock when: (cycle mod cycles_per_minute = 0) {
-		int sim_minutes <- int(cycle / cycles_per_minute);
-		string clock <- "Simulated time   "
-		              + string(int(sim_minutes / 60)) + "h "
-		              + string(sim_minutes mod 60) + "m"
-		              + "    of    " + string(int(run_minutes)) + "m";
-		ask readout {
-			do update(clock);
-		}
-	}
-
-	reflex report when: (cycle mod cycles_per_minute = 0) and (cycle > 0) {
-		write "t+" + string(int(cycle / cycles_per_minute)) + " min  |  AQI "
-		    + string(int(aqi_now)) + " (" + aqi_state + ")  |  peak PM2.5-equiv "
-		    + string(round(peak_index_in_study_area() * 100.0) / 100.0) + " ug/m3  |  PM "
-		    + string(round(pm_total * 100.0) / 100.0) + " g  |  NOx "
-		    + string(round(nox_total * 100.0) / 100.0) + " g  |  fleet "
-		    + string(length(car_random) + length(motorbike_random)
-		    + length(bus_random) + length(lorry_random));
-	}
-
-	reflex stop_at_end when: cycle > int(run_minutes * cycles_per_minute) {
-		do pause;
-	}
-
-}
-
-// ====================================================================
-// AGENTS
-// ====================================================================
-
-species study_border schedules: [] {
-	aspect default {
-		// Filled translucent body so the measured zone is unmistakable,
-		// plus the outline and a label tying it to the AQI number.
-		draw shape color: rgb(0, 200, 200, 60);
-		draw (shape.contour + 40) color: #cyan;
-		// Label so the box reads as the measured zone, not a stray square:
-		// the AQI number comes from inside this boundary only.
-		draw "2 km study area - AQI measured inside" at: {
-			shape.location.x - shape.width / 2.0 + 60.0,
-			shape.location.y + shape.height / 2.0 - 60.0, 2.0
-		} anchor: #top_left color: #cyan font: font(22);
-	}
-}
-
-species road schedules: [] {
-	string road_name;
-	string highway;
-
-	aspect default {
-		draw (shape + 6.0) color: (world.study_area covers self.shape) ? #grey : rgb(58, 58, 66);
-	}
-}
-
-species building schedules: [] {
-	float depth;
-
-	aspect default {
-		draw shape color: rgb(70, 70, 78) depth: depth border: #black;
-	}
-}
-
-// Base vehicle: drives the road graph towards a target, then picks another.
-// Emissions come from the distance actually covered, so congestion
-// automatically produces more pollution on the same road.
-species base_vehicle skills: [moving] {
-	graph road_graph;
-	string type;
-	point target;
-	float speed;
-	bool is_electrical <- false;
-	float travelled <- 0.0;
-	float collected_pm <- 0.0;
-	float collected_nox <- 0.0;
+	file icon <- file("../images/xanhsm.png");
+	// Penang data (George Town, EPSG:3857): roads and buildings from
+	// includes/penang_{roads,buildings}.shp. The fleet is NOT hardcoded here.
+	// main2.gaml reads the real survey flows from includes/traffic_counts.csv
+	// and converts them with Little's Law, across all four counted classes:
+	// cars, buses, lorries and motorcycles. max_cars and friends are then set
+	// to whatever the survey produced, and the bars below are scaled to those.
+	shape_file roads_shape_file <- shape_file("../includes/penang_roads.shp");
+	//	shape_file dummy_roads_shape_file <- shape_file(resources_dir + "vinuniroad.shp");
+	shape_file buildings_shape_file <- shape_file("../includes/penang_buildings.shp");
+	//	shape_file road_cells_shape_file <- shape_file(resources_dir + "road_cells.shp");
+	//	shape_file naturals_shape_file <- shape_file(resources_dir + "naturals.shp");
+	//	shape_file buildings_admin_shape_file <- shape_file(resources_dir + "buildings_admin.shp");
+	geometry shape <- envelope(buildings_shape_file);
+	float xx_sc <- 1.0;
+	float xx <- 3300.0;
+	float yy <- 2000.0;
+	float lx <- 30.0;
+	float ly <- -630.0;
+	float sub_scale <- 0.4;
+	//	float map_scale_main <- 0.75;
+	//	float map_main_y <- 5200.0;
+	float WW <- 3.9;
+	float HH <- 3.9;
 
 	init {
-		road_graph <- world.road_network;
-		// `from:` gave this agent the shape of the segment it was seeded on.
-		if (self.shape != nil) {
-			location <- any_location_in(self.shape);
-		} else {
-			location <- any_location_in(one_of(road));
+	//		sizeCoeff <- 100;
+		sizeCoeff <- 0.2;
+
+		// ------------------------------------------------------------------
+		// Penang UI layout.
+		// The Hanoi version hardcoded panel positions in metres (xx, lx, ly,
+		// ...), which are meaningless in the Penang CRS: every panel ended up
+		// ~1.1e7 units away from the map, i.e. off screen. Everything is now
+		// derived from world.shape, so the panels stay glued to the map in
+		// any projection. The map spans world.shape (ctr +/- W/2, H/2), so the
+		// default camera covers it; the side column is placed just outside
+		// that envelope and relies on the display fitting the whole scene.
+		// ------------------------------------------------------------------
+		point ctr <- world.shape.location;
+		float W <- world.shape.width;
+		float H <- world.shape.height;
+		// progress_bar draws its title 10*scale above the bar and its
+		// left/right labels 40*scale below it, so this sets the vertical
+		// spacing needed between two stacked bars.
+		float lab_scale <- H / 1400.0;
+		// World units per screen pixel, used to nudge panels by a few pixels.
+		// Assumes the scene spans the window over ~1200 px; adjust if the
+		// panels need a bigger nudge.
+		float px <- W / 1200.0;
+		// Clock: left column, outside the world envelope. with_box is on so the
+		// panel occupies exactly x..x+width and stays clear of the map.
+		// The y axis reads downwards on screen in this display, hence the
+		// minus sign on the px nudge.
+		float ui_left <- ctr.x - W / 2.0 - W * 0.34;
+		// Right column: outside the world envelope (the map spans
+		// ctr.x +/- W/2), so the panels never cover the map. The display
+		// fits the scene bounds on open, which then include this column.
+		float ui_right <- ctr.x + W / 2.0 + W * 0.04;
+		float bar_w <- W * 0.30;
+		float bar_h <- H * 0.04;
+		// Five bars stacked below the chart: the step has to clear the title
+		// drawn 10*scale above a bar and the labels drawn 40*scale below it.
+		float bar_step <- H * 0.105;
+		float bar_y1 <- ctr.y - H * 0.10;
+
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px, size::22, name::lb_Time, value::"" + string(date("now")), with_box::true, width::W * 0.30, height::H * 0.05];
+
+		// max_* now come from the survey (main2.gaml load_traffic_counts), so these
+		// bars show the real counted fleet rather than hand-set numbers. The
+		// labels keep their "% Electrical" wording because that is what the
+		// sliders drive: n_* of max_* vehicles are made electric.
+		create progress_bar with:
+		[x::ui_right, y::bar_y1, width::bar_w, height::bar_h, max_val::(max_cars + max_bus + max_motorbikes + max_lorries), title::lb_rates_EG, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - bar_step, width::bar_w, height::bar_h, max_val::max_cars, title::lb_cars, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 2.0 * bar_step, width::bar_w, height::bar_h, max_val::max_motorbikes, title::lb_motobike, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 3.0 * bar_step, width::bar_w, height::bar_h, max_val::max_bus, title::lb_bus, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 4.0 * bar_step, width::bar_w, height::bar_h, max_val::max_lorries, title::lb_lorries, left_label::"0%", right_label::"100%", scale::lab_scale];
+
+		create line_graph_aqi with: [x::ui_right, y::ctr.y + H * 0.26, width::bar_w, height::H * 0.22, label::"Hourly AQI", thick_axe::1, thick_line::5];
+		create api_loader;
+		ask api_loader {
+			do run_thread interval: 60 #second;
 		}
+
 	}
 
-	reflex choose_target when: target = nil {
-		// Mostly keep destinations inside the study area so traffic circulates
-		// in front of the audience instead of leaving the screen.
-		if (flip(0.75)) {
-			target <- any_location_in(one_of(road where (world.study_area covers each.shape)));
-		}
-		if (target = nil) {
-			target <- any_location_in(one_of(road));
-		}
-	}
+	string map_center <- "48.8566140,2.3522219";
 
-	reflex drive when: target != nil {
-		point before <- location;
-		path followed <- goto(target: target, on: world.road_network, recompute_path: false,
-		                      return_path: true, move_weights: world.road_weights);
-		travelled <- travelled + (before distance_to location);
-		if (location distance_to target < 30.0) {
-			target <- nil;
-		}
-	}
+	//	reflex produce_pollutant {
+	//		ask road { 
+	//			speed_coeff <- rnd(12);
+	//		}
+	//
+	//	}
 
-	aspect base {
-		draw squircle(26.0, 11.0) color: (is_electrical ? #cyan : #orange) rotate: heading depth: 8.0 border: #black;
-	}
 }
 
-species car_random parent: base_vehicle {
-	init { speed <- (20.0 + rnd(15.0)) #km / #h; }
-}
-
-species motorbike_random parent: base_vehicle {
-	init { speed <- (25.0 + rnd(20.0)) #km / #h; }
-}
-
-species bus_random parent: base_vehicle {
-	init { speed <- (15.0 + rnd(10.0)) #km / #h; }
-}
-
-// Lorries are the class the VinUni model never had. They matter in Penang
-// because their PM and NOx factors are an order of magnitude above a car's.
-species lorry_random parent: base_vehicle {
-	init { speed <- (15.0 + rnd(10.0)) #km / #h; }
-}
-
-species readout schedules: [] {
-	// Overwritten in init with site-anchored positions; defaults only for the compiler.
-	point clock_pos <- {0.0, 0.0, 0.0};
-	point note_pos <- {0.0, 0.0, 0.0};
-	string value <- "";
-
-	action update(string v) {
-		value <- v;
-	}
-
-	aspect default {
-		draw value at: clock_pos anchor: #bottom_left color: #white font: font(30);
-		draw "AQI comes from a modelled PM2.5 field and is NOT calibrated against a monitor"
-		     at: note_pos anchor: #bottom_left color: #grey font: font(18);
-	}
-}
-
-species aqi_chart schedules: [] {
-	// All five are overwritten in init with site-anchored positions;
-	// the values here only keep the compiler happy.
-	point origin <- {0.0, 0.0, 0.0};
-	point title_pos <- {0.0, 0.0, 0.0};
-	point value_pos <- {0.0, 0.0, 0.0};
-	point state_pos <- {0.0, 0.0, 0.0};
-	float w <- 700.0;
-	float h <- 260.0;
-	float max_val <- 300.0;
-	list<float> history <- list_with(40, -1.0);
-
-	action update(float v) {
-		remove index: 0 from: history;
-		add item: v to: history at: length(history);
-	}
-
-	action draw_line(point a, point b, int thickness, rgb col) {
-		// centroid of a two-point line is its midpoint (SpatialPunctal.java).
-		geometry seg <- line([a, b]) + thickness;
-		draw seg at: centroid(seg) color: col;
-	}
-
-	aspect default {
-		// `origin` is the bottom-left of the plot box, so the trace grows
-		// upward from it and AQI 0 sits on the baseline.
-		draw rectangle(w, h) at: { origin.x + w / 2.0, origin.y + h / 2.0, 1.0 } color: rgb(0, 0, 0, 140) border: rgb(128, 128, 128);
-		draw "AQI inside the 2 km study area" at: title_pos anchor: #bottom_left
-		     color: #white font: font(24);
-		draw string(int(world.aqi_now)) at: value_pos anchor: #top_right
-		     color: world.aqi_color_of(world.aqi_now) font: font(44);
-		draw world.aqi_state at: state_pos anchor: #top_right
-		     color: world.aqi_color_of(world.aqi_now) font: font(20);
-
-		point previous <- nil;
-		loop i from: 0 to: length(history) - 1 {
-			if (history[i] >= 0) {
-				point p <- { origin.x + w * i / length(history),
-				             origin.y + h * min(1.0, history[i] / max_val), 2.0 };
-				if (previous != nil) {
-					do draw_line a: previous b: p thickness: 3 col: world.aqi_color_of(history[i]);
-				}
-				previous <- p;
-			}
-		}
-	}
-}
-
-// ====================================================================
-// EXPERIMENTS
-// ====================================================================
-
-experiment Penang_Demo autorun: true type: gui {
-
+experiment exp4Projector autorun: true {
+	// The fleet comes from includes/traffic_counts.csv via main2.gaml, which
+	// sets max_cars / max_motorbikes / max_bus / max_lorries from the survey.
+	// study_half_size and fleet_scale are the two numbers the description asks
+	// to be arguable on the workshop day: how big the study area is, and how
+	// hard to push the counted traffic.
 	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
-	parameter "Electric share" var: electric_share <- 0.0 min: 0.0 max: 1.0 step: 0.05;
-	parameter "Mixing depth (m)" var: pm_mix_height <- 80.0 min: 10.0 max: 300.0 step: 10.0;
-	parameter "Run length (minutes)" var: run_minutes <- 30.0 min: 5.0 max: 120.0 step: 5.0;
-
-	output synchronized: false {
-		layout #split parameters: false navigator: false editors: false consoles: false
-		       toolbars: false tray: false tabs: false controls: true;
-
-		display main type: opengl background: rgb(16, 16, 20) axes: false {
-
-			// No explicit camera: GAMA auto-fits the world envelope (the
-			// OSM extract, ~6 km across, in the world CRS). A hardcoded
-			// EPSG:3857 camera would point off-screen since the world CRS
-			// is a local metric projection, not absolute 3857 metres.
-
+	parameter "% Electrical cars" var: n_cars <- 0 min: 0 max: max_cars;
+	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;
+	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
+	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
+	output synchronized: true {
+	//		layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
+		display "project" background: #black axes: false type: 3d 
+		keystone: [{0.0,0.0,0.0},{0.0,1.0,0.0},{1.0,1.0,0.0},{0.9934502617256865,0.021782863139094277,0.0}]
+		{
+			// Penang: no raster backdrop (vindark.png is Hanoi) -- draw vectors only.
+			species road refresh: false position: {0, 0, 0.05};
+			species study_boundary position: {0, 0, 0.045};
 			species building refresh: false;
-			species road refresh: false;
-			species study_border;
-			species car_random aspect: base;
-			species motorbike_random aspect: base;
-			species bus_random aspect: base;
-			species lorry_random aspect: base;
-			species readout;
-			species aqi_chart;
+			species car_random position: {0, 0, 0.05};
+			species dummy_car aspect: base position: {0, 0, 0.05};
+			species motorbike_random position: {0, 0, 0.05};
+			species bus_random position: {0, 0, 0.05};
+			species lorry_random position: {0, 0, 0.05};
+			species AQI;
 
-			mesh pm25_field scale: 1 above: 1 triangulation: true transparency: 0.5
-			     color: scale(zone_colors) smooth: 1;
-
-			overlay position: {30 #px, 30 #px} size: {1 #px, 1 #px} background: rgb(16, 16, 20)
-			       border: rgb(16, 16, 20) rounded: false {
-				float y <- 20 #px;
-				draw "Penang Air demonstration" at: { 0, y } anchor: #top_left
-				     color: #white font: font(26);
-				y <- y + 55 #px;
-				draw "Site 5.409611 N, 100.316083 E - 2 km study area"
-				     at: { 0, y } anchor: #top_left color: #white font: font(18);
-				y <- y + 40 #px;
-				loop band over: aqi_band.pairs {
-					draw square(20 #px) at: { 10 #px, y + 10 #px } color: aqi_color_of(float(band.key));
-					draw band.value + "  (AQI " + string(band.key) + "+)"
-					     at: { 38 #px, y } anchor: #left_center color: #white font: font(15);
-					y <- y + 26 #px;
-				}
-				y <- y + 18 #px;
-				draw square(20 #px) at: { 10 #px, y + 10 #px } color: #orange;
-				draw "Combustion vehicle" at: { 38 #px, y } anchor: #left_center
-				     color: #white font: font(15);
-				y <- y + 24 #px;
-				draw square(20 #px) at: { 10 #px, y + 10 #px } color: #cyan;
-				draw "Electric vehicle" at: { 38 #px, y } anchor: #left_center
-				     color: #white font: font(15);
-			}
+			mesh instant_heatmap scale: 0 above: 0.5 triangulation: true position: {0, 0, 0.01} transparency: 0.2 color: scale(zone_colors1) smooth: 0;
 		}
+
 	}
+
 }
 
-// Headless run, for producing the numbers and figures after the workshop.
-// The same `report` reflex prints a row every simulated minute.
-experiment Penang_Batch autorun: false type: batch until: (cycle >= int(run_minutes * 60)) {
-
+experiment MainExp autorun: false {
+	// Same CSV-driven fleet as expProj; see main2.gaml load_traffic_counts.
 	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
-	parameter "Electric share" var: electric_share <- 0.0 min: 0.0 max: 1.0 step: 0.05;
-	parameter "Mixing depth (m)" var: pm_mix_height <- 80.0 min: 10.0 max: 300.0 step: 10.0;
-	parameter "Run length (minutes)" var: run_minutes <- 30.0 min: 5.0 max: 120.0 step: 5.0;
+	parameter "% Electrical cars" var: n_cars <- 0 min: 0 max: max_cars;
+	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;
+	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
+	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
+	output synchronized: false {
+			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
+//		display "project" type: 3d {
+//			image ("../includes/ocplight.png");
+//		}
 
-	output {
-		layout #split parameters: false navigator: false editors: false consoles: false
-		       toolbars: false tray: false tabs: false controls: false;
+		display main type: opengl background: #black axes: false {
+			overlay position: {50 #px, 50 #px} size: {1 #px, 1 #px} background: #black border: #black rounded: false {
+			//for each possible type, we draw a square with the corresponding color and we write the name of the type
+			//				draw "Estimated pollution based on realtime traffic incident and AQ sensors" at: {0, 0} anchor: #top_left color: #white font: title;
+				float y <- 10 #px;
+				draw rectangle(40 #px, 160 #px) at: {20 #px, y + 60 #px} wireframe: true color: #white;
+				loop p over: reverse(pollutions.pairs) {
+					draw square(40 #px) at: {20 #px, y} color: rgb(p.key, 1.0);
+					draw p.value at: {60 #px, y} anchor: #left_center color: #white font: text;
+					y <- y + 40 #px;
+				}
+
+				y <- y + 340 #px;
+				draw "Icons" at: {0, y} anchor: #top_left color: #white font: title;
+				y <- y + 40 #px;
+				//				draw rectangle(40 #px, 120 #px) at: {20 #px, y + 40 #px} wireframe: true color: #white;
+				loop p over: legends.pairs {
+					draw legends_geom4[p.value] at: {20 #px, y} color: rgb(p.key, 0.8);
+					draw p.value at: {60 #px, y} anchor: #left_center color: #white font: text;
+					y <- y + 40 #px;
+				}
+
+				draw "Estimated realtime pollution" at: {220 #px, -20 #px} color: #white font: font(32);
+			}
+
+			//			light #ambient intensity: 256;
+			// Penang: the Hanoi camera and the two vindark.png raster
+			// mini-maps were removed (Hanoi imagery/coordinates); the panels
+			// below are positioned from world.shape instead.
+			species road refresh: false position: {0, 0, 0.02};
+			species study_boundary position: {0, 0, 0.015};
+			species building refresh: false;
+			species car_random;
+			species dummy_car aspect: base;
+			species motorbike_random;
+			// Each counted class draws its own aspect (traffic2.gaml) so the
+			// mix is readable, and each honours is_electrical so moving a
+			// slider is visible on the map, not only in the numbers.
+			species bus_random;
+			species lorry_random;
+			// Ambient stations from the Open-Meteo feed. They write into the
+			// heat map, so they have to be on screen rather than invisible
+			// pollution.
+			species AQI;
+
+			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;
+			// Panels are declared last so they are drawn on top of the heat map
+			// (layer order = draw order in a GAMA display).
+			species progress_bar position: {0, 0, 0.0001};
+			species line_graph_aqi position: {0, 0, 0.005};
+			species param_indicator position: {0, 0, 0.01};
+			event #mouse_down {
+				if (#user_location overlaps first(progress_bar where (each.title = lb_cars)).bound) {
+					point p <- #user_location;
+					geometry pp <- first(progress_bar where (each.title = lb_cars)).bound;
+					n_cars <- int(max_cars * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
+					write n_cars;
+				}
+
+				if (#user_location overlaps first(progress_bar where (each.title = lb_motobike)).bound) {
+					point p <- #user_location;
+					geometry pp <- first(progress_bar where (each.title = lb_motobike)).bound;
+					n_motorbikes <- int(max_motorbikes * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
+				}
+
+if (#user_location overlaps first(progress_bar where (each.title = lb_bus)).bound) {
+				point p <- #user_location;
+				geometry pp <- first(progress_bar where (each.title = lb_bus)).bound;
+				n_bus <- int(max_bus * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
+			}
+
+				if (#user_location overlaps first(progress_bar where (each.title = lb_lorries)).bound) {
+					point p <- #user_location;
+					geometry pp <- first(progress_bar where (each.title = lb_lorries)).bound;
+					n_lorries <- int(max_lorries * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
+				}
+
+			}
+
+		}
+
 	}
+
 }

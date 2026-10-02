@@ -26,10 +26,15 @@ global {
 	int n_bus;
 	int road_scenario;
 	int display_mode<-1;
+	// Lorries: the Penang survey counts them separately (see
+	// includes/traffic_counts.csv column 5).
+	int max_lorries <- 500;
+	int n_lorries;
 	// Save params' old values to detect value changes
 	int n_cars_prev;
 	int n_motorbikes_prev;
 	int n_bus_prev;
+	int n_lorries_prev;
 	int road_scenario_prev;
 	int display_mode_prev;
 	
@@ -39,6 +44,14 @@ global {
 	float Z_LVL3 <- 0.3;
 	
 	
+	// Traffic counts -> fleet (see main2.gaml load_traffic_counts).
+	// Scales every surveyed class by the same factor, so the vehicle mix in
+	// includes/traffic_counts.csv is preserved.
+	float fleet_scale <- 1.0;
+	// Cap on total agents, for workshop hardware. The fleet is scaled down
+	// uniformly if the survey produces more than this.
+	int max_vehicles <- 900;
+
 	// Pollution diffusion
 	float pollutant_decay_rate <-  0.99; //0.99;
 	float pollutant_diffusion <- 0.05;
@@ -153,9 +166,11 @@ global {
 	string lb_Traffic_Incident<-"Real-time Traffic Incident";
 	string lb_AQI_update<-"Real-time AQI";
 	string lb_cars<-"% Electrical Cars";
-	string lb_motobike<-"% Electrical Motorbikes";
+	string lb_motobike<-"% Electrical Motorcycles";
 	string lb_bus<-"% Electrical Bus";
+	string lb_lorries<-"% Electrical Lorries";
 	string lb_rates_EG<-"Total Rate of Electrical vs Gas";
+	string lb_TotalFleet<-"Total Vehicles";
 
 	map<string,rgb> palet <- [
 		BUILDING_BASE::#white,

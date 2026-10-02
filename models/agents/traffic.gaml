@@ -22,6 +22,11 @@ global {
 species road schedules: [] {
 	rgb color <- #white;
 	string type;
+	// Survey lookup keys, read from the shapefile's NAME/HIGHWAY columns.
+	// The traffic-counts CSV is keyed on street name, so without these the
+	// counts cannot be attached to the segments they describe.
+	string road_name;
+	string highway;
 	bool oneway;
 	bool s1_closed;
 	bool s2_closed;
@@ -32,12 +37,17 @@ species road schedules: [] {
 		speed_coeff <- (n_cars_on_road + n_motorbikes_on_road <= capacity) ? 1 : exp(-(n_motorbikes_on_road + 4 * n_cars_on_road) / capacity);
 	}
 
-	aspect default {
+aspect default {
 	//		if (display_mode = 0) {
-	//			if (closed) {
-	//				draw shape + 50 color: palet[CLOSED_ROAD_TRAFFIC];
-	//			} else {
-		draw shape + (speed_coeff*sizeCoeff) color: brewer_colors("Reds")[int(13 - speed_coeff)] /*end_arrow: 10*/;
+//			if (closed) {
+//				draw shape + 50 color: palet[CLOSED_ROAD_TRAFFIC];
+//			} else {
+		// speed_coeff is 12 while free-flowing and drops towards 0 under load.
+		// brewer_colors returns at most 9 entries, so the index has to be
+		// clamped: the raw int(13 - speed_coeff) ran off the end of the ramp
+		// the moment update_speed_coeff produced a congested road.
+		draw shape + (speed_coeff * sizeCoeff)
+			color: brewer_colors("Reds")[min(8, max(0, int(9 - speed_coeff / 12.0 * 8.0)))];
 		//			}
 		//
 		//		} else {
@@ -179,9 +189,10 @@ species AQI {
 		instant_heatmap[location] <- instant_heatmap[location] + aqi / (15 + noise);
 	}
 
+	// A small dot, not the original label: at a 2 km study width a 32 pt
+	// number is unreadable and the labels collided with the side panels.
 	aspect default {
-		draw "" + aqi color: #violet + 10 at: location font: font("SansSerif", 32, #bold);
-		//		draw square(500) color: #cyan;
+		draw circle(45 * sizeCoeff) color: #violet border: #white at: location;
 	}
 
 }
@@ -274,10 +285,18 @@ species base_vehicle skills: [moving] {
 species vehicle_random parent: base_vehicle {
 	float aqh <- 0.0;
 	bool recompute_path <- false;
-	geometry shape<-triangle(100*sizeCoeff);
+	// Deliberately no default shape. `create from:` sets it to the road segment
+	// the survey placed this vehicle on, and init then seeds the agent there.
+	// A default triangle here would be indistinguishable from a real seed and
+	// would scatter the fleet away from the streets the counts were measured on.
+	geometry shape;
 	init {
 		road_graph <- road_network;
-		location <- any_location_in(any(road)); //one_of(non_deadend_nodes).location;
+		if (self.shape != nil) {
+			location <- any_location_in(self.shape);
+		} else {
+			location <- any_location_in(any(road)); //one_of(non_deadend_nodes).location;
+		}
 	}
 
 	float pollution_from_speed {
@@ -310,6 +329,13 @@ species motorbike_random parent: vehicle_random {
 		//		linked_lane_limit <- 1;
 	}
 
+
+	// Shortest and thinnest glyph of the counted classes: on a 2 km study
+	// area a motorbike has to read as clearly smaller than the car it shares
+	// the lane with, otherwise the mix the survey measured is not legible.
+	aspect default {
+		draw squircle(30 * sizeCoeff, 3 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+	}
 }
 
 species car_random parent: vehicle_random {
@@ -327,6 +353,10 @@ species car_random parent: vehicle_random {
 		//		linked_lane_limit <- 0;
 	}
 
+
+	aspect default {
+		draw squircle(50 * sizeCoeff, 6 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+	}
 }
 
 species dummy_car parent: vehicle_random {
@@ -347,10 +377,26 @@ species dummy_car parent: vehicle_random {
 
 }
 
+// Lorries are the vehicle class the VinUni model never had. The Penang
+// survey counts lorries in their own column (includes/traffic_counts.csv),
+// so folding them into buses would both lose the count and understate their
+// PM and NOx.
+species lorry_random parent: vehicle_random {
+	float aqh <- 25 + rnd(20.0);
+
+	init {
+		speed <- (12 + rnd(8)) #km / #h;
+	}
+
+	// Longest glyph in the fleet and wider than a bus, which is how a
+	// 3-axle lorry reads against a 2-axle one at 2 km zoom.
+	aspect default {
+		draw squircle(80 * sizeCoeff, 10 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+	}
+}
+
 species bus_random parent: vehicle_random {
 	float aqh <- 5 + rnd(2.0);
-	rgb color <- brewer_colors("Greens")[int(13 - energy)];
-	float energy <- 1 + rnd(11.0);
 
 	init {
 	//		vehicle_length <- 6.8 #m;
@@ -364,11 +410,11 @@ species bus_random parent: vehicle_random {
 		//		linked_lane_limit <- 0;
 	}
 
-	reflex ss {
-		energy <- energy > 2 ? energy - 0.1 : 12;
-		color <- brewer_colors("Greens")[int(13 - energy)];
-	}
 
+	// Longer than a car, narrower than a lorry.
+	aspect default {
+		draw squircle(90 * sizeCoeff, 8 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+	}
 }
 
 species building schedules: [] {

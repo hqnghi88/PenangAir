@@ -244,7 +244,7 @@ species base_vehicle skills: [moving] {
 
 	}
 	//Reflex to leave the building to another building
-	reflex leave when: (target = nil) and (flip(leaving_proba)) {
+	reflex depart when: (target = nil) and (flip(leaving_proba)) {
 		if (should_die) {
 			target <- any_location_in(targetP);
 		} else {

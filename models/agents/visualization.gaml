@@ -35,22 +35,46 @@ species progress_bar schedules: [] {
 		return polygon([{rect_x, rect_y}, {rect_x + rect_width, rect_y}, {rect_x + rect_width, rect_y + rect_height}, {rect_x, rect_y + rect_height}, {rect_x, rect_y}]) at_location loc;
 	}
 
+	// Maps a world-space point to the fraction of this bar it represents.
+	// Uses the bar's own x and width rather than anything derived from the
+	// hit geometry, so the mapping stays exact however the aspect is drawn.
+	float fraction_at (point p) {
+		if (width <= 0.0) {
+			return 0.0;
+		}
+		return min(1.0, max(0.0, (p.x - x) / width));
+	}
+
 	action update (float new_val) {
 		val <- new_val;
 	}
 
 	aspect default {
-		float length_filled <- width * val / max_val;
+		// Clamp the filled fraction to [0,1]. This guards two ways it could
+		// go wrong: max_val is still 0 on the first draw, because max_cars and
+		// friends are only assigned later in the run; and val can overshoot
+		// max_val. Either would otherwise give a negative or NaN length and a
+		// visibly broken bar.
+		float frac <- 0.0;
+		if (max_val > 0.0) {
+			frac <- min(1.0, max(0.0, val / max_val));
+		}
+		float length_filled <- width * frac;
 		float length_unfilled <- width - length_filled;
+		// The hit region depends only on the bar's own geometry, never on
+		// val, so it is correct from the first draw and never needs to be
+		// recomputed. It is extended below the bar to cover the 0%/100%
+		// labels and the percentage readout, which are drawn outside the
+		// bar itself and would otherwise be unclickable.
 		if (bound = nil) {
-			bound <- rect(x + length_filled, y, length_unfilled, height, {(x + length_filled) + length_unfilled / 2, y + height / 2, Z_LVL2});
+			bound <- rect(x - 10.0 * scale, y - 10.0 * scale, width + 20.0 * scale, height + 110.0, {(x - 10.0 * scale) + (width + 20.0 * scale) / 2, (y - 10.0 * scale) + (height + 110.0) / 2, Z_LVL2});
 		}
 		draw rect(x, y, length_filled, height, {x + length_filled / 2, y + height / 2, Z_LVL2}) color: #cyan;
 		draw rect(x + length_filled, y, length_unfilled, height, {(x + length_filled) + length_unfilled / 2, y + height / 2, Z_LVL2}) color: #blue;
 		draw (title + ": ") at: {x, y - 10 * scale, Z_LVL2} font: font(size_title) color: palet[TEXT_COLOR];
 		draw (left_label) at: {x - 5, y + 40 * scale, Z_LVL2} font: font(size_labels) color: palet[TEXT_COLOR];
 		draw (right_label) at: {x + width - 20, y + 40 * scale, Z_LVL2} font: font(size_labels) color: palet[TEXT_COLOR];
-		draw (""+int(val/max_val*100)+"%") at:{x+width/2,y+height/2+100,Z_LVL2}font: font(size_labels) color: #red;
+		draw (""+int(frac*100)+"%") at:{x+width/2,y+height/2+100,Z_LVL2}font: font(size_labels) color: #red;
 	}
 
 }

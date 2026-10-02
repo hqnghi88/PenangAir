@@ -156,7 +156,7 @@ experiment MainExp autorun: false {
 	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	output synchronized: false {
-			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
+			layout #split parameters: false navigator: false editors: false consoles: true toolbars: false tray: false tabs: false controls: true;
 //		display "project" type: 3d {
 //			image ("../includes/ocplight.png");
 //		}
@@ -213,31 +213,47 @@ experiment MainExp autorun: false {
 			species line_graph_aqi position: {0, 0, 0.005};
 			species param_indicator position: {0, 0, 0.01};
 			event #mouse_down {
-				if (#user_location overlaps first(progress_bar where (each.title = lb_cars)).bound) {
-					point p <- #user_location;
-					geometry pp <- first(progress_bar where (each.title = lb_cars)).bound;
-					n_cars <- int(max_cars * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
-					write n_cars;
-				}
-
-				if (#user_location overlaps first(progress_bar where (each.title = lb_motobike)).bound) {
-					point p <- #user_location;
-					geometry pp <- first(progress_bar where (each.title = lb_motobike)).bound;
-					n_motorbikes <- int(max_motorbikes * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
-				}
-
-if (#user_location overlaps first(progress_bar where (each.title = lb_bus)).bound) {
+				// Click position is mapped to a fraction of a bar through the
+				// bar's own x and width, then clamped. Everything about the
+				// mapping is reported on every click, so the console shows
+				// exactly what the bar thought was clicked.
 				point p <- #user_location;
-				geometry pp <- first(progress_bar where (each.title = lb_bus)).bound;
-				n_bus <- int(max_bus * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
-			}
+				bool hit <- false;
+				string rep <- "click x=" + string(p.x) + " y=" + string(p.y);
 
-				if (#user_location overlaps first(progress_bar where (each.title = lb_lorries)).bound) {
-					point p <- #user_location;
-					geometry pp <- first(progress_bar where (each.title = lb_lorries)).bound;
-					n_lorries <- int(max_lorries * ((p.x - ((pp.location.x - pp.width / 2))) / (pp.width)));
+				progress_bar pb_cars <- first(progress_bar where (each.title = lb_cars));
+				progress_bar pb_moto <- first(progress_bar where (each.title = lb_motobike));
+				progress_bar pb_bus <- first(progress_bar where (each.title = lb_bus));
+				progress_bar pb_lorry <- first(progress_bar where (each.title = lb_lorries));
+
+				if (p overlaps pb_cars.bound) {
+					hit <- true;
+					n_cars <- min(max_cars, max(0, int(max_cars * pb_cars.fraction_at(p))));
+					rep <- rep + " | CARS frac=" + string(pb_cars.fraction_at(p))
+					      + " n_cars=" + string(n_cars) + "/" + string(max_cars);
 				}
-
+				if (p overlaps pb_moto.bound) {
+					hit <- true;
+					n_motorbikes <- min(max_motorbikes, max(0, int(max_motorbikes * pb_moto.fraction_at(p))));
+					rep <- rep + " | MOTO frac=" + string(pb_moto.fraction_at(p))
+					      + " n_motorbikes=" + string(n_motorbikes) + "/" + string(max_motorbikes);
+				}
+				if (p overlaps pb_bus.bound) {
+					hit <- true;
+					n_bus <- min(max_bus, max(0, int(max_bus * pb_bus.fraction_at(p))));
+					rep <- rep + " | BUS frac=" + string(pb_bus.fraction_at(p))
+					      + " n_bus=" + string(n_bus) + "/" + string(max_bus);
+				}
+				if (p overlaps pb_lorry.bound) {
+					hit <- true;
+					n_lorries <- min(max_lorries, max(0, int(max_lorries * pb_lorry.fraction_at(p))));
+					rep <- rep + " | LORRY frac=" + string(pb_lorry.fraction_at(p))
+					      + " n_lorries=" + string(n_lorries) + "/" + string(max_lorries);
+				}
+				if (not hit) {
+					rep <- rep + " | NO BAR HIT";
+				}
+				write rep;
 			}
 
 		}

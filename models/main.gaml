@@ -273,6 +273,29 @@ global {
 		max_bus <- max(1, length(bus_random));
 		max_lorries <- max(1, length(lorry_random));
 
+		// The bars are created by the entry point's init, which runs before
+		// this one, so each one copied max_cars and friends while they still
+		// held their declaration defaults of 1000/500/500/500. max_val is a
+		// copy, not a reference, so without this the bars keep dividing by
+		// 1000: setting every car electric would read as 29% instead of
+		// 100%. Push the real fleet sizes in now that they are known.
+		if (length(progress_bar) > 0) {
+			ask first(progress_bar where (each.title = lb_rates_EG)) {
+				max_val <- max_cars + max_bus + max_motorbikes + max_lorries;
+			}
+			ask first(progress_bar where (each.title = lb_cars)) { max_val <- max_cars; }
+			ask first(progress_bar where (each.title = lb_motobike)) { max_val <- max_motorbikes; }
+			ask first(progress_bar where (each.title = lb_bus)) { max_val <- max_bus; }
+			ask first(progress_bar where (each.title = lb_lorries)) { max_val <- max_lorries; }
+		}
+
+		// Confirm the bars are now scaled against the real fleet. Every
+		// max_val here must match the fleet size printed just below; if one
+		// is still 1000/500 the bar percentages will read low.
+		ask progress_bar {
+			write ("bar '" + title + "' max_val=" + string(max_val));
+		}
+
 		write "Fleet from traffic_counts.csv: " + string(max_cars) + " cars, "
 		    + string(max_motorbikes) + " motorbikes, " + string(max_bus) + " buses, "
 		    + string(max_lorries) + " lorries.";

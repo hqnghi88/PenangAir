@@ -76,7 +76,7 @@ global {
 		float bar_step <- H * 0.105;
 		float bar_y1 <- ctr.y - H * 0.10;
 
-		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px, size::22, name::lb_Time, value::"" + string(date("now")), with_box::true, width::W * 0.30, height::H * 0.05];
+//		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px, size::22, name::lb_Time, value::"" + string(date("now")), with_box::true, width::W * 0.30, height::H * 0.05];
 
 		// max_* now come from the survey (main2.gaml load_traffic_counts), so these
 		// bars show the real counted fleet rather than hand-set numbers. The
@@ -156,7 +156,7 @@ experiment MainExp autorun: false {
 	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	output synchronized: false {
-			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
+			layout #split parameters: false navigator: false editors: false consoles: true toolbars: false tray: false tabs: false controls: true;
 //		display "project" type: 3d {
 //			image ("../includes/ocplight.png");
 //		}
@@ -183,7 +183,7 @@ experiment MainExp autorun: false {
 					y <- y + 40 #px;
 				}
 
-				draw "Estimated realtime pollution" at: {220 #px, -20 #px} color: #white font: font(32);
+				draw "Estimated realtime pollution: " + string(date("now")) at: {0 #px, -20 #px} color: #white font: font(22);
 			}
 
 			//			light #ambient intensity: 256;

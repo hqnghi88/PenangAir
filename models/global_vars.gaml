@@ -200,13 +200,6 @@ global {
 	map<rgb, string> legends <- [#cyan::"Electrical Vehicle", #blue::"Gas Vehicle", rgb(#white)::"Roads"];
 	font text <- font("Arial", 18, #bold);
 	font title <- font("Arial", 24, #bold);
-	
-	// Optional API keys for real-time traffic data (leave empty to use free sources)
-	string BING_MAPS_API_KEY <- "";
-	string AZURE_MAPS_API_KEY <- "";
-	string TOMTOM_API_KEY <- "";
-	string MAPQUEST_API_KEY <- "";
-	
 	int get_pollution_threshold(float aqi) {
 		int threshold <- 0;
 		loop thr over: thresholds_pollution.keys {

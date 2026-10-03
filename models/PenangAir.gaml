@@ -94,7 +94,12 @@ global {
 		[x::ui_right, y::bar_y1 - 4.0 * bar_step, width::bar_w, height::bar_h, max_val::max_lorries, title::lb_lorries, left_label::"0%", right_label::"100%", scale::lab_scale];
 
 		create line_graph_aqi with: [x::ui_right, y::ctr.y + H * 0.26, width::bar_w, height::H * 0.22, label::"Hourly AQI", thick_axe::1, thick_line::5];
-		create api_loader;
+		// The live-feed loader lives in agents/traffic.gaml, which cannot see the
+		// study area declared in main.gaml, so hand it the centre and radius here.
+		create api_loader with: [
+			live_center::study_area.location,
+			live_reach::study_half_size * 3.0 + 1500.0
+		];
 		ask api_loader {
 			do run_thread interval: 60 #second;
 		}

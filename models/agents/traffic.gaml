@@ -142,7 +142,7 @@ species api_loader skills: [thread] {
 			do die;
 		}
 
-int made <- 0;
+		int made <- 0;
 		bool live_ok <- false;
 		live_made <- 0;
 		// Live positions come first: real buses crawling on real streets is
@@ -169,16 +169,14 @@ int made <- 0;
 					made <- made + 1;
 				}
 			}
-			ask (param_indicator where (each.name = lb_Traffic_Incident)) {
-				do update(string(made) + " simulated congestion incidents @ " + date("now"));
-			}
+			// An ask block cannot sit inside an if/else here: GAMA rejects it,
+			// so the indicator text is assembled and applied once, below.
+			write string(made) + " simulated congestion incidents @ " + date("now");
 
 		} else {
 			// Genuine feed, so this is live evidence even when nothing is slow.
-			ask (param_indicator where (each.name = lb_Traffic_Incident)) {
-				do update(string(length(bus_lat)) + " live Rapid Penang buses, "
-					+ string(made) + " stopped/slow near site @ " + date("now"));
-			}
+			write string(length(bus_lat)) + " live Rapid Penang buses, "
+				+ string(made) + " stopped/slow near site @ " + date("now");
 
 		}
 
@@ -200,6 +198,12 @@ int made <- 0;
 	// ------------------------------------------------------------------
 
 	string gtfs_url <- "https://api.data.gov.my/gtfs-realtime/vehicle-position/prasarana?category=rapid-bus-penang";
+
+	// Study-area centre and search radius for the live feed. This file cannot
+	// see main.gaml's globals, so the experiment sets both when it creates the
+	// loader. live_center stays nil until then, which suppresses the map layer.
+	point live_center;
+	float live_reach <- 4500.0;
 
 	list<float> bus_lat <- [];
 	list<float> bus_lon <- [];
@@ -585,15 +589,19 @@ int made <- 0;
 	// cannot separate "waiting at a stop" from "stuck in traffic", so these are
 	// labelled with the observed speed rather than called congestion.
 	// Only buses near the study area are considered.
-	action spawn_incidents_from_live_buses {
-		float reach <- study_half_size * 3.0 + 1500.0;
+	action spawn_incidents_from_live_buses() {
 		live_made <- 0;
+		if (live_center = nil) {
+			return;
+		}
+
+		float reach <- live_reach;
 		loop k from: 0 to: length(bus_lat) - 1 {
 			float lat <- bus_lat[k];
 			float lon <- bus_lon[k];
 			point p <- to_GAMA_CRS({lon, lat}, "EPSG:4326").location;
 			// Capped: each traffic_incident spawns a dummy_car through its reflex.
-			if (live_made < 8 and p != nil and p distance_to study_area.location < reach) {
+			if (live_made < 8 and p != nil and p distance_to live_center < reach) {
 				float kmh <- 999.0;
 				if (k < length(bus_speed) and bus_speed[k] >= 0.0) {
 					kmh <- bus_speed[k] * 3.6;

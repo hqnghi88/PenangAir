@@ -193,6 +193,20 @@ global {
 	int size <- 300;
 	field instant_heatmap <- field(size, size);
 
+	// How strongly the measured PM2.5 reading seeds instant_heatmap at the AQI
+	// station, per cycle.
+	//
+	// The old seed was aqi/(15+noise) -- an arbitrary divisor that put a US-AQI
+	// of 63 at ~4 per cycle, against ~1450 per cycle from the car fleet alone.
+	// The measurement was ~2.5% of modelled traffic and therefore invisible.
+	//
+	// 6.0 puts a typical Penang reading of ~17 ug/m3 at ~100 per cycle, which
+	// is a substantial fraction of traffic and so plainly visible once `diff`
+	// spreads it. Raise it to make ambient dominate; lower it toward 1 to make
+	// it a faint floor under traffic. Note this also raises max(instant_heatmap),
+	// which main.gaml's calculate_aqi graphs, so the AQI chart moves with it.
+	float AMBIENT_SEED_SCALE <- 6.0;
+
 	list<rgb> pal <- palette([#black, #green, #yellow, #orange, #orange, #red, #red, #red]);
 	map<string, geometry> legends_geom1 <- ["Electrical Vehicle"::square(800),  "Gas Vehicle"::circle(400),  "Roads"::circle(400)]; 
 	map<string, geometry> legends_geom2 <- ["Electrical Vehicle"::square(160),  "Gas Vehicle"::circle(80),  "Roads"::circle(80)]; 

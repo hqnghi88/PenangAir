@@ -95,6 +95,15 @@ species api_loader skills: [thread] {
 		// to a Hanoi bounding box.
 		float aqi_val <- -1.0;
 		float pm25_val <- 0.0;
+		// Where the reading was actually taken. The feed snaps the requested
+		// coordinate to the centre of its own ~9 km grid cell and echoes that
+		// cell back as latitude/longitude, which for this site is roughly 2 km
+		// south-west of the requested point. The marker is placed on the echoed
+		// cell, not on the requested coordinate, so it sits where the
+		// measurement is rather than at the study centre where it would imply a
+		// precision the data does not have.
+		float cell_lat <- 0.0;
+		float cell_lon <- 0.0;
 		try {
 			json_file
 			sss <- json_file("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=5.4096&longitude=100.3161&current=us_aqi,pm2_5&timezone=auto");
@@ -104,6 +113,12 @@ species api_loader skills: [thread] {
 				aqi_val <- float(cur["us_aqi"]);
 				pm25_val <- float(cur["pm2_5"]);
 			}
+
+			if (c["latitude"] != nil and c["longitude"] != nil) {
+				cell_lat <- float(c["latitude"]);
+				cell_lon <- float(c["longitude"]);
+			}
+
 		}
 
 		catch {
@@ -115,21 +130,25 @@ species api_loader skills: [thread] {
 				do update("feed offline, model-only heatmap");
 			}
 		} else {
-			// One station per 3x3 cell over the world extent so the heatmap
-			// keeps some spatial texture instead of a single flat value.
-			float x0 <- world.shape.location.x - world.shape.width / 2.0;
-			float y0 <- world.shape.location.y - world.shape.height / 2.0;
-			float dx <- world.shape.width / 3.0;
-			float dy <- world.shape.height / 3.0;
-			loop i from: 0 to: 2 {
-				loop j from: 0 to: 2 {
-					create AQI with: [
-						location::{x0 + i * dx + rnd(dx), y0 + j * dy + rnd(dy)},
-						aqi::aqi_val * (0.9 + rnd(0.2)),
-						noise::rnd(1.0)
-					];
-				}
-			}
+			// One station, placed on the grid cell the feed reported, so the
+			// marker's position is the position the measurement describes. If
+			// the feed omitted the echoed cell, fall back to the requested
+			// coordinate rather than dropping the reading.
+			//
+			// Projected here rather than in main.gaml: this file cannot see
+			// site_merc, and the world projection is not usable while the
+			// experiment's own init is still running.
+			point here <- to_GAMA_CRS({cell_lon, cell_lat}, "EPSG:4326").location;
+			create AQI with: [
+				location::here,
+				aqi::aqi_val,
+				pm25::pm25_val,
+				noise::0.0,
+				description::(string(round(cell_lat * 1000.0) / 1000.0) + ", "
+					+ string(round(cell_lon * 1000.0) / 1000.0)
+					+ "  AQI " + string(int(aqi_val)) + "  PM2.5 "
+					+ string(round(pm25_val * 10) / 10.0) + " ug/m3")
+			];
 			ask (param_indicator where (each.name = lb_AQI_update)) {
 				do update("US-AQI " + string(int(aqi_val)) + " PM2.5 " + string(round(pm25_val * 10) / 10.0) + " @ " + string(date("now")));
 			}
@@ -183,16 +202,38 @@ species AQI {
 	geometry shape <- circle(30);
 	string description;
 	float aqi;
+	// Measured PM2.5 in ug/m3. Carried separately from the dimensionless US-AQI
+	// index because only PM2.5 is a concentration comparable with the field the
+	// vehicles write into.
+	float pm25;
 	float noise <- 0.0;
 
+	// Seeds the measured ambient level at the station, which main.gaml's `diff`
+	// reflex then spreads over the study area. The vehicles in main.gaml's
+	// `update` reflex add the modelled traffic increment on top of this.
+	//
+	// Scaled from PM2.5 rather than from aqi/(15+noise): the old divisor was
+	// arbitrary, and a US-AQI of 63 seeded only ~4 per cycle against ~1450 from
+	// the car fleet alone -- roughly 2.5% of traffic, which is why the measured
+	// value was not discernible in the cloud. AMBIENT_SEED_SCALE is the single
+	// knob for how present the measurement reads.
 	reflex pollute {
-		instant_heatmap[location] <- instant_heatmap[location] + aqi / (15 + noise);
+		instant_heatmap[location] <- instant_heatmap[location]
+			+ pm25 * AMBIENT_SEED_SCALE;
 	}
 
 	// A small dot, not the original label: at a 2 km study width a 32 pt
 	// number is unreadable and the labels collided with the side panels.
+	// description carries the measured value, so the dot is traceable back to
+	// the reading that seeded this part of the heat map. Drawn at the dot's own
+	// location with perspective: false so it stays upright and legible.
 	aspect default {
-		draw circle(45 * sizeCoeff) color: #violet border: #white at: location;
+		// A cyan ring, deliberately outside the zone_colors1 palette the heat
+		// map uses, so the measured region is separable from modelled traffic
+		// by colour alone. Radius scales with the reading, so a worse day
+		// draws a visibly larger ring.
+		draw circle(60 * sizeCoeff + pm25 * 2.0) color: #cyan border: #white at: location;
+		draw description color: #white at: location perspective: false font: font("SansSerif", 6, #bold);
 	}
 
 }

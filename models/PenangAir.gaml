@@ -178,7 +178,11 @@ experiment MainExp autorun: false {
 				y <- y + 40 #px;
 				//				draw rectangle(40 #px, 120 #px) at: {20 #px, y + 40 #px} wireframe: true color: #white;
 				loop p over: legends.pairs {
-					draw legends_geom4[p.value] at: {20 #px, y} color: rgb(p.key, 0.8);
+					// legends is map<rgb, string>, so p.key is the colour and
+					// p.value the name. Indexing legends_geom4 by p.value looked a
+					// shape up by that name, which made the index type unknown;
+					// drawing p.key directly is correct and keeps the alpha float.
+					draw (p.value = "Roads" ? circle(40 #px) : square(40 #px)) at: {20 #px, y} color: p.key;
 					draw p.value at: {60 #px, y} anchor: #left_center color: #white font: text;
 					y <- y + 40 #px;
 				}
@@ -190,8 +194,8 @@ experiment MainExp autorun: false {
 			// Penang: the Hanoi camera and the two vindark.png raster
 			// mini-maps were removed (Hanoi imagery/coordinates); the panels
 			// below are positioned from world.shape instead.
-			species road refresh: false position: {0, 0, 0.02};
-			species study_boundary position: {0, 0, 0.015};
+			species road refresh: false;// position: {0, 0, 0.02};
+			species study_boundary;// position: {0, 0, 0.015};
 			species building refresh: false;
 			species car_random;
 			species dummy_car aspect: base;

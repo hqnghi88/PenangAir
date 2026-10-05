@@ -174,9 +174,16 @@ experiment MainExp autorun: false {
 			//				draw "Estimated pollution based on realtime traffic incident and AQ sensors" at: {0, 0} anchor: #top_left color: #white font: title;
 				float y <- 10 #px;
 				draw rectangle(40 #px, 160 #px) at: {20 #px, y + 60 #px} wireframe: true color: #white;
-				loop p over: reverse(pollutions.pairs) {
-					draw square(40 #px) at: {20 #px, y} color: rgb(p.key, 1.0);
-					draw p.value at: {60 #px, y} anchor: #left_center color: #white font: text;
+				// Iterating .keys rather than .pairs: in this GAMA version a
+				// pair from map<rgb, string>.pairs is pair<unknown, unknown>,
+				// so p.key/p.value are unknown and everything built from them
+				// fails -- rgb(unknown, 1.0), draw(unknown), and the ternary
+				// below, which needs a bool condition. .keys keeps the
+				// declared rgb type and legends[k] the declared string.
+				loop key over: reverse(pollutions.keys) {
+					string label <- pollutions[key];
+					draw square(40 #px) at: {20 #px, y} color: rgb(key, 1.0);
+					draw label at: {60 #px, y} anchor: #left_center color: #white font: text;
 					y <- y + 40 #px;
 				}
 
@@ -184,13 +191,15 @@ experiment MainExp autorun: false {
 				draw "Icons" at: {0, y} anchor: #top_left color: #white font: title;
 				y <- y + 40 #px;
 				//				draw rectangle(40 #px, 120 #px) at: {20 #px, y + 40 #px} wireframe: true color: #white;
-				loop p over: legends.pairs {
-					// legends is map<rgb, string>, so p.key is the colour and
-					// p.value the name. Indexing legends_geom4 by p.value looked a
-					// shape up by that name, which made the index type unknown;
-					// drawing p.key directly is correct and keeps the alpha float.
-					draw (p.value = "Roads" ? circle(40 #px) : square(40 #px)) at: {20 #px, y} color: p.key;
-					draw p.value at: {60 #px, y} anchor: #left_center color: #white font: text;
+				// Same .keys pattern as the pollution legend above, for the same
+				// typing reason. Shape comes from legends_geom4, which is
+				// map<string, geometry> and so yields a real geometry rather
+				// than an unknown that draw cannot accept.
+				loop key over: legends.keys {
+					string label <- legends[key];
+					geometry icon <- legends_geom4[label];
+					draw icon at: {20 #px, y} color: key;
+					draw label at: {60 #px, y} anchor: #left_center color: #white font: text;
 					y <- y + 40 #px;
 				}
 

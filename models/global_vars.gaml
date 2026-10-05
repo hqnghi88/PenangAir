@@ -193,24 +193,25 @@ global {
 	int size <- 300;
 	field instant_heatmap <- field(size, size);
 
-	// How strongly the measured PM2.5 reading seeds instant_heatmap at the AQI
-	// station, per cycle.
-	//
-	// The old seed was aqi/(15+noise) -- an arbitrary divisor that put a US-AQI
-	// of 63 at ~4 per cycle, against ~1450 per cycle from the car fleet alone.
-	// The measurement was ~2.5% of modelled traffic and therefore invisible.
-	//
-	// 6.0 puts a typical Penang reading of ~17 ug/m3 at ~100 per cycle, which
-	// is a substantial fraction of traffic and so plainly visible once `diff`
-	// spreads it. Raise it to make ambient dominate; lower it toward 1 to make
-	// it a faint floor under traffic. Note this also raises max(instant_heatmap),
-	// which main.gaml's calculate_aqi graphs, so the AQI chart moves with it.
-	float AMBIENT_SEED_SCALE <- 6.0;
+	// Removed: AMBIENT_SEED_SCALE.
+//
+// It scaled how strongly the measured PM2.5 was written into
+// instant_heatmap at the AQI station each cycle. No value of it worked,
+// because the field has no decay reflex (main.gaml:581 is commented out) and
+// the feed's single ~9 km cell covers the whole 2 km map:
+//
+//   seed 6.0, point injection  -> equilibrium max ~365, permanent cone
+//   seed 6.0, uniform injection -> cloud flattened, max == min
+//
+// There is no magnitude that adds a regional concentration to an
+// accumulation-only field without distorting it, so the AQI reading is
+// reported in the marker label and the side panel instead of being simulated.
+// See the AQI species in agents/traffic.gaml.
 	// Base radius in metres of the AQI marker's filled disc, before the
-	// per-reading scaling. 220 m is ~11% of the 2 km world envelope, so the
-	// marker reads clearly at the default view; the previous 60 m ring was
-	// ~4% and was easy to miss entirely.
-	float AQI_MARKER_RADIUS <- 220.0;
+	// per-reading scaling. 70 m is ~3.5% of the 2 km world envelope: visible
+	// now that the marker is drawn after the heat map, without dominating the
+	// map the way 220 m (~11%) did.
+	float AQI_MARKER_RADIUS <- 70.0;
 
 	list<rgb> pal <- palette([#black, #green, #yellow, #orange, #orange, #red, #red, #red]);
 	map<string, geometry> legends_geom1 <- ["Electrical Vehicle"::square(800),  "Gas Vehicle"::circle(400),  "Roads"::circle(400)]; 

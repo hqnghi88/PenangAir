@@ -218,19 +218,24 @@ species AQI {
 	float pm25;
 	float noise <- 0.0;
 
-	// Seeds the measured ambient level at the station, which main.gaml's `diff`
-	// reflex then spreads over the study area. The vehicles in main.gaml's
-	// `update` reflex add the modelled traffic increment on top of this.
+	// Deliberately does NOT write into instant_heatmap.
 	//
-	// Scaled from PM2.5 rather than from aqi/(15+noise): the old divisor was
-	// arbitrary, and a US-AQI of 63 seeded only ~4 per cycle against ~1450 from
-	// the car fleet alone -- roughly 2.5% of traffic, which is why the measured
-	// value was not discernible in the cloud. AMBIENT_SEED_SCALE is the single
-	// knob for how present the measurement reads.
-	reflex pollute {
-		instant_heatmap[location] <- instant_heatmap[location]
-			+ pm25 * AMBIENT_SEED_SCALE;
-	}
+	// It used to seed the measured PM2.5 at this station every cycle. That was
+	// wrong for two reasons, both measured rather than argued:
+	//
+	//  - main.gaml's decay reflex is commented out (main.gaml:581), so
+	//    anything injected per cycle accumulates against diffusion alone.
+	//    Injecting at `location` made one cell outrun the spread and left a
+	//    permanent cone for the whole run.
+	//  - The feed's single ~9 km cell covers this entire 2 km map, so its
+	//    correct spatial form is uniform, not a point. Seeding the whole field
+	//    instead removed the cone but flattened the cloud completely: measured
+	//    max == min == 18.99 by cycle 4000, with the traffic structure gone.
+	//
+	// A regional concentration cannot be added to an accumulation-only field
+	// without either spiking it or erasing what is already there. The reading
+	// is therefore reported rather than simulated: it appears in the marker
+	// label, carrying the cell it was measured at, and in the side panel.
 
 	// A small dot, not the original label: at a 2 km study width a 32 pt
 	// number is unreadable and the labels collided with the side panels.
@@ -250,7 +255,7 @@ species AQI {
 		// Filled in the heat-map palette's own terms would be invisible, since
 		// one region colour can be arbitrarily dark; a flat cyan fill plus a
 		// white edge holds up on both ends of the scale.
-		draw circle(AQI_MARKER_RADIUS + pm25 * 6.0) color: #cyan border: #white at: location;
+		draw circle(AQI_MARKER_RADIUS + pm25 * 2.0) color: #cyan border: #white at: location;
 		// Label offset above the disc so it does not sit on the fill, and drawn
 		// on top so it stays legible over both the disc and the heat map.
 		draw description color: #white at: {location.x, location.y + AQI_MARKER_RADIUS * 0.5} perspective: false font: font("SansSerif", 9, #bold);

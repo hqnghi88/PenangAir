@@ -23,13 +23,18 @@ global {
 	];
 
 	// Display scaling applied to every vehicle's contribution on top of its
-	// per-kilometre factor, currently 1/5.
+	// per-kilometre factor, currently 1/20 of the unscaled total.
 	//
 	// Deliberately a separate multiplier rather than dividing the numbers in
 	// EMISSION_FACTOR: those are published g/km figures, and main.gaml's update
 	// reflex is written specifically so the heat map does not contradict the
 	// factors the model quotes. Scaling them here keeps the real values
 	// intact and makes the whole heat-map magnitude one adjustable knob.
+	//
+	// main.gaml's `diff` reflex spreads instant_heatmap every cycle, so the
+	// field settles to a quasi-steady maximum rather than growing without
+	// bound: measured at 0.2 it levelled off near 365, and the level scales
+	// linearly with this constant.
 	float EMISSION_SCALE <- 0.2;
 	
 	// Params

@@ -69,6 +69,14 @@ aspect default {
 }
 
 species api_loader skills: [thread] {
+	// Where the AQI feed's single reading is shown, in EPSG:4326: the study
+	// site, which is the only position inside the 2 km world envelope that
+	// can display the reading. This file cannot see main.gaml's site_merc,
+	// so the experiment sets it when it creates the loader. Projected at
+	// use time, not creation time, because the world projection is not
+	// ready during the experiment's init.
+	point aqi_site_4326;
+
 	float start <- gama.machine_time;
 	float end <- gama.machine_time;
 
@@ -95,13 +103,14 @@ species api_loader skills: [thread] {
 		// to a Hanoi bounding box.
 		float aqi_val <- -1.0;
 		float pm25_val <- 0.0;
-		// Where the reading was actually taken. The feed snaps the requested
-		// coordinate to the centre of its own ~9 km grid cell and echoes that
-		// cell back as latitude/longitude, which for this site is roughly 2 km
-		// south-west of the requested point. The marker is placed on the echoed
-		// cell, not on the requested coordinate, so it sits where the
-		// measurement is rather than at the study centre where it would imply a
-		// precision the data does not have.
+		// Where the reading was actually taken, echoed back by the feed. The
+		// feed snaps the requested coordinate to the centre of its own ~9 km
+		// grid cell, so this cell sits roughly 2 km south-west of the request.
+		// Kept for the label only: the map's world geometry is
+		// envelope(penang_roads.shp), which spans only 2.01 x 2.00 km
+		// (lon 100.30706..100.32510, lat 5.40064..5.41856). The cell is
+		// outside that envelope, so placing the marker on it renders the
+		// marker off-map and invisible at the default view.
 		float cell_lat <- 0.0;
 		float cell_lon <- 0.0;
 		try {
@@ -130,21 +139,22 @@ species api_loader skills: [thread] {
 				do update("feed offline, model-only heatmap");
 			}
 		} else {
-			// One station, placed on the grid cell the feed reported, so the
-			// marker's position is the position the measurement describes. If
-			// the feed omitted the echoed cell, fall back to the requested
-			// coordinate rather than dropping the reading.
+			// One station, at the study site. This is the only position inside the
+			// 2 km world envelope where the reading can be shown at all; the
+			// cell it was measured at is off-map. The label carries the cell
+			// coordinates so the marker's position is not mistaken for the
+			// position of the measurement.
 			//
 			// Projected here rather than in main.gaml: this file cannot see
 			// site_merc, and the world projection is not usable while the
 			// experiment's own init is still running.
-			point here <- to_GAMA_CRS({cell_lon, cell_lat}, "EPSG:4326").location;
+			point here <- to_GAMA_CRS(aqi_site_4326, "EPSG:4326").location;
 			create AQI with: [
 				location::here,
 				aqi::aqi_val,
 				pm25::pm25_val,
 				noise::0.0,
-				description::(string(round(cell_lat * 1000.0) / 1000.0) + ", "
+				description::("cell " + string(round(cell_lat * 1000.0) / 1000.0) + ", "
 					+ string(round(cell_lon * 1000.0) / 1000.0)
 					+ "  AQI " + string(int(aqi_val)) + "  PM2.5 "
 					+ string(round(pm25_val * 10) / 10.0) + " ug/m3")
@@ -228,12 +238,22 @@ species AQI {
 	// the reading that seeded this part of the heat map. Drawn at the dot's own
 	// location with perspective: false so it stays upright and legible.
 	aspect default {
-		// A cyan ring, deliberately outside the zone_colors1 palette the heat
-		// map uses, so the measured region is separable from modelled traffic
-		// by colour alone. Radius scales with the reading, so a worse day
-		// draws a visibly larger ring.
-		draw circle(60 * sizeCoeff + pm25 * 2.0) color: #cyan border: #white at: location;
-		draw description color: #white at: location perspective: false font: font("SansSerif", 6, #bold);
+		// Deliberately outside the zone_colors1 palette the heat map uses, so
+		// the measured region is separable from modelled traffic by colour
+		// alone.
+		//
+		// Solid and large rather than a thin ring: the previous outline was
+		// ~86 m across on a 2 km map, about 4% of the visible width, and read
+		// as almost nothing next to the heat map. A filled disc with a heavy
+		// border is visible against any cell colour behind it.
+		//
+		// Filled in the heat-map palette's own terms would be invisible, since
+		// one region colour can be arbitrarily dark; a flat cyan fill plus a
+		// white edge holds up on both ends of the scale.
+		draw circle(AQI_MARKER_RADIUS + pm25 * 6.0) color: #cyan border: #white at: location;
+		// Label offset above the disc so it does not sit on the fill, and drawn
+		// on top so it stays legible over both the disc and the heat map.
+		draw description color: #white at: {location.x, location.y + AQI_MARKER_RADIUS * 0.5} perspective: false font: font("SansSerif", 9, #bold);
 	}
 
 }

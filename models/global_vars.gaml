@@ -206,6 +206,11 @@ global {
 	// it a faint floor under traffic. Note this also raises max(instant_heatmap),
 	// which main.gaml's calculate_aqi graphs, so the AQI chart moves with it.
 	float AMBIENT_SEED_SCALE <- 6.0;
+	// Base radius in metres of the AQI marker's filled disc, before the
+	// per-reading scaling. 220 m is ~11% of the 2 km world envelope, so the
+	// marker reads clearly at the default view; the previous 60 m ring was
+	// ~4% and was easy to miss entirely.
+	float AQI_MARKER_RADIUS <- 220.0;
 
 	list<rgb> pal <- palette([#black, #green, #yellow, #orange, #orange, #red, #red, #red]);
 	map<string, geometry> legends_geom1 <- ["Electrical Vehicle"::square(800),  "Gas Vehicle"::circle(400),  "Roads"::circle(400)]; 

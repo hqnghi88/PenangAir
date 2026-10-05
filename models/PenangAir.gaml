@@ -94,7 +94,11 @@ global {
 		[x::ui_right, y::bar_y1 - 4.0 * bar_step, width::bar_w, height::bar_h, max_val::max_lorries, title::lb_lorries, left_label::"0%", right_label::"100%", scale::lab_scale];
 
 		create line_graph_aqi with: [x::ui_right, y::ctr.y + H * 0.26, width::bar_w, height::H * 0.22, label::"Hourly AQI", thick_axe::1, thick_line::5];
-		create api_loader;
+		// aqi_site_4326: the live-feed loader lives in agents/traffic.gaml,
+		// which cannot see main.gaml's site_merc. site_4326 rather than
+		// site_merc because the latter is only built in main.gaml's init,
+		// which has not run yet when this experiment init runs.
+		create api_loader with: [aqi_site_4326::site_4326];
 		ask api_loader {
 			do run_thread interval: 60 #second;
 		}
@@ -138,9 +142,12 @@ experiment exp4Projector autorun: true {
 			species motorbike_random position: {0, 0, 0.05};
 			species bus_random position: {0, 0, 0.05};
 			species lorry_random position: {0, 0, 0.05};
-			species AQI;
 
 			mesh instant_heatmap scale: 0 above: 0.5 triangulation: true position: {0, 0, 0.01} transparency: 0.2 color: scale(zone_colors1) smooth: 0;
+			// Declared after the mesh on purpose: in a GAMA display layer order
+			// is draw order, so a species listed before the mesh is painted over
+			// by it and never appears.
+			species AQI position: {0, 0, 0.02};
 		}
 
 	}
@@ -205,12 +212,13 @@ experiment MainExp autorun: false {
 			// slider is visible on the map, not only in the numbers.
 			species bus_random;
 			species lorry_random;
-			// Ambient stations from the Open-Meteo feed. They write into the
-			// heat map, so they have to be on screen rather than invisible
-			// pollution.
-			species AQI;
 
 			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;
+			// The measured ambient station. Declared after the mesh so it is
+			// drawn on top of it: layer order = draw order in a GAMA display,
+			// and while this sat before the mesh the heat map painted over it
+			// every cycle, so the marker never appeared on screen at all.
+			species AQI position: {0, 0, 0.02};
 			// Panels are declared last so they are drawn on top of the heat map
 			// (layer order = draw order in a GAMA display).
 			species progress_bar position: {0, 0, 0.0001};

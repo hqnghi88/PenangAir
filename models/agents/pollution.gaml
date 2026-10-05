@@ -21,6 +21,16 @@ global {
 		"bus"::["CO"::13.0, "NOx"::7.0, "SO2"::0.5, "PM"::0.9],
 		"lorry"::["CO"::15.0, "NOx"::9.0, "SO2"::0.6, "PM"::1.0]
 	];
+
+	// Display scaling applied to every vehicle's contribution on top of its
+	// per-kilometre factor, currently 1/5.
+	//
+	// Deliberately a separate multiplier rather than dividing the numbers in
+	// EMISSION_FACTOR: those are published g/km figures, and main.gaml's update
+	// reflex is written specifically so the heat map does not contradict the
+	// factors the model quotes. Scaling them here keeps the real values
+	// intact and makes the whole heat-map magnitude one adjustable knob.
+	float EMISSION_SCALE <- 0.2;
 	
 	// Params
 	float cell_volume <- (shape.width / grid_size) * (shape.height / grid_size) * grid_depth;  // Unit: cubic meters	

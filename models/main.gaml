@@ -592,7 +592,7 @@ if (type = "bus") {
 			string kind <- (type != nil and type in EMISSION_FACTOR.keys) ? type : "car";
 			float factor <- EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"];
 			instant_heatmap[location] <- instant_heatmap[location]
-				+ (is_electrical ? 0.1 : 1.0) * factor * 3.0;
+				+ (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
 		}
 
 	}

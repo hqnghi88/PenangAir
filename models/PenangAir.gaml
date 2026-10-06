@@ -1,6 +1,6 @@
 /***
 * Name: mainroadcells
-* Author: minhduc0711
+* Author: hqnghi
 * Description: 
 * Tags: Tag1, Tag2, TagN
 ***/
@@ -17,12 +17,8 @@ global {
 	// and converts them with Little's Law, across all four counted classes:
 	// cars, buses, lorries and motorcycles. max_cars and friends are then set
 	// to whatever the survey produced, and the bars below are scaled to those.
-	shape_file roads_shape_file <- shape_file("../includes/penang_roads.shp");
-	//	shape_file dummy_roads_shape_file <- shape_file(resources_dir + "vinuniroad.shp");
-	shape_file buildings_shape_file <- shape_file("../includes/penang_buildings.shp");
-	//	shape_file road_cells_shape_file <- shape_file(resources_dir + "road_cells.shp");
-	//	shape_file naturals_shape_file <- shape_file(resources_dir + "naturals.shp");
-	//	shape_file buildings_admin_shape_file <- shape_file(resources_dir + "buildings_admin.shp");
+	shape_file roads_shape_file <- shape_file("../includes/penang_roads.shp"); 
+	shape_file buildings_shape_file <- shape_file("../includes/penang_buildings.shp"); 
 	geometry shape <- envelope(buildings_shape_file);
 	float xx_sc <- 1.0;
 	float xx <- 3300.0;

@@ -9,11 +9,9 @@ model main
 import "agents/traffic.gaml"
 import "agents/pollution.gaml"
 import "agents/visualization.gaml"
-
 global {
-
 // Benchmark execution time 
-	float step <- 1 #s;
+	float step <- 1#s;
 	// Load shapefiles  
 	// Penang data (see Scale3.gaml header): George Town study box, EPSG:3857.
 	shape_file roads_shape_file <- shape_file("../includes/penang_roads.shp");
@@ -36,8 +34,8 @@ global {
 	float study_half_size <- 1000.0;
 	geometry study_area;
 	//	list<road> open_roads;
-	float traffic_light_interval <- 180 #s; //parameter: 'Traffic light interval' init: 60 #s;
-	int tttt <- 1;
+	float traffic_light_interval <- 180#s; //parameter: 'Traffic light interval' init: 60 #s;
+	int use_traffic_data <- 1;
 	//	list<pollutant_grid> active_cells;
 	init {
 		// Built here rather than at declaration time: the world projection is
@@ -57,7 +55,8 @@ global {
 				string nm <- string(geom get ("NAME"));
 				string hw <- string(geom get ("HIGHWAY"));
 				create road(shape: geom, road_name: nm, highway: hw) {
-					if (self.shape.perimeter < 1.0) { do die; }
+					if (self.shape.perimeter < 1.0) {
+						do die; }
 				}
 			}
 
@@ -65,7 +64,8 @@ global {
 			// outside it before building the routing graph. Doing it here, not
 			// after, avoids seeding vehicles on roads that are about to vanish.
 			list<road> in_study <- list<road>(road where (study_area covers each.shape));
-			ask (road - in_study) { do die; }
+			ask (road - in_study) {
+				do die; }
 			write "Roads: " + string(length(in_study)) + " of the shapefile segments lie inside the study area.";
 
 			// Cropping to the study box cuts streets at the border and leaves
@@ -75,32 +75,32 @@ global {
 			graph full_network <- as_edge_graph(road);
 			list main_roads <- [];
 			loop comp over: connected_components_of(full_network, true) {
-				if (length(comp) > length(main_roads)) { main_roads <- list(comp); }
+				if (length(comp) > length(main_roads)) {
+					main_roads <- list(comp); }
 			}
 			int dropped_roads <- length(road) - length(main_roads);
 			if (dropped_roads > 0) {
-				ask (road - main_roads) { do die; }
+				ask (road - main_roads) {
+					do die; }
 			}
 			write "Road network: " + string(length(main_roads)) + " segments kept in the main"
 			    + " component, " + string(dropped_roads) + " isolated fragments removed.";
 
 			//Weights of the road
-			road_weights <- road as_map (each::each.shape.perimeter);
+			road_weights <- road as_map (each :: each.shape.perimeter);
 			road_network <- as_edge_graph(road);
 
-			create study_boundary with: [shape::study_area];
+			create study_boundary with: [shape :: study_area];
 			// Additional visualization
 			create building from: buildings_shape_file {
 				depth <- (rnd(100) / 100) * (rnd(100) / 100) * (rnd(100) / 100 * 10) * 5 + 10;
 				texture <- textures[rnd(9)];
 			}
-
 		}
 
-		if (tttt = 1) {
+		if (use_traffic_data = 1) {
 			do load_traffic_counts;
 		}
-
 	}
 
 	// ==================================================================
@@ -125,10 +125,12 @@ global {
 	//   0 road_name, 1 highway, 2 length_m, 3 cars, 4 buses, 5 lorries,
 	//   6 motorcycles. length_m is informational; each segment already knows
 	//   its own length.
-	int count_of (string s) {
-		if (s = nil) { return 0; }
+	int count_of(string s) {
+		if (s = nil) {
+			return 0; }
 		string t <- trim(s);
-		if (t = "") { return 0; }
+		if (t = "") {
+			return 0; }
 		return int(t);
 	}
 
@@ -303,24 +305,31 @@ global {
 
 	// First n elements of a list, as a new list, so the fleet can be scaled
 	// down to the cap while preserving the order segments were added in.
-	list<geometry> keep_leading (list<geometry> source, int n) {
-		list<geometry> out <- list<geometry>();
+	list<geometry> keep_leading(list<geometry> source, int n) {
+		list<geometry> out <- list<geometry>(); 
 		int last <- min(n, length(source)) - 1;
 		if (last >= 0) {
-			loop i from: 0 to: last { add item: source[i] to: out; }
+			loop i from: 0 to: last {
+				add item: source[i] to: out; }
 		}
 		return out;
 	}
 
 	// Free-flow speed by road class (km/h), the divisor in the Little's Law
 	// crossing time. Unlisted classes fall back to 25.
-	float class_speed_of (string highway) {
-		if (highway = "motorway") { return 80.0; }
-		if (highway = "trunk") { return 50.0; }
-		if (highway = "primary") { return 40.0; }
-		if (highway = "secondary") { return 35.0; }
-		if (highway = "tertiary") { return 30.0; }
-		if (highway = "living_street") { return 15.0; }
+	float class_speed_of(string highway) {
+		if (highway = "motorway") {
+			return 80.0; }
+		if (highway = "trunk") {
+			return 50.0; }
+		if (highway = "primary") {
+			return 40.0; }
+		if (highway = "secondary") {
+			return 35.0; }
+		if (highway = "tertiary") {
+			return 30.0; }
+		if (highway = "living_street") {
+			return 15.0; }
 		return 25.0;
 	}
 
@@ -335,17 +344,16 @@ global {
 		ask (param_indicator where (each.name = lb_Time)) {
 			do update(t);
 		}
-
 	}
 
-	reflex calculate_aqi when: every(refreshing_rate_plot) { //every(1 #minute) {
+	reflex calculate_aqi when: every(refreshing_rate_plot) { // every(1 #minute) {
 		float aqi <- max(instant_heatmap);
 		ask line_graph_aqi {
 			do update(aqi * 10);
 		}
-		//		 ask indicator_health_concern_level {
-		//		 	do update(aqi);
-		//		 }
+	// ask indicator_health_concern_level {
+	// do update(aqi);
+	// }
 	}
 
 	action update_vehicle_population (string type, int delta) {
@@ -370,7 +378,7 @@ global {
 			} 
 		}
 
-if (type = "bus") {
+		if (type = "bus") {
 		ask bus_random {
 			is_electrical <- false;
 		}
@@ -379,23 +387,23 @@ if (type = "bus") {
 			is_electrical <- true;
 		}
 
-	}
-
-	if (type = "lorry") {
-		ask lorry_random {
-			is_electrical <- false;
 		}
-
-		ask n_lorries among lorry_random {
-			is_electrical <- true;
+	
+		if (type = "lorry") {
+			ask lorry_random {
+				is_electrical <- false;
+			}
+	
+			ask n_lorries among lorry_random {
+				is_electrical <- true;
+			}
+	
 		}
-
-	}
 
 	}
 
 	reflex update_car_population when: n_cars != n_cars_prev {
-	//		int delta_cars <- n_cars - n_cars_prev;
+		// int delta_cars <- n_cars - n_cars_prev;
 		do update_vehicle_population("car", n_cars);
 		ask first(progress_bar where (each.title = lb_cars)) {
 			do update(float(n_cars));
@@ -409,7 +417,7 @@ if (type = "bus") {
 	}
 
 	reflex update_motorbike_population when: n_motorbikes != n_motorbikes_prev {
-	//		int delta_motorbikes <- n_motorbikes - n_motorbikes_prev;
+		// int delta_motorbikes <- n_motorbikes - n_motorbikes_prev;
 		do update_vehicle_population("motorbike", n_motorbikes);
 		ask first(progress_bar where (each.title = lb_motobike)) {
 			do update(float(n_motorbikes));
@@ -448,33 +456,19 @@ if (type = "bus") {
 		n_lorries_prev <- n_lorries;
 	}
  
-	matrix<float> mat_diff <- matrix(
-		[
-			[1 / 20, 1 / 20, 1 / 20], 
-			[1 / 20, 3 / 5 * pollutant_decay_rate, 1 / 20], 
-			[1 / 20, 1 / 20, 1 / 20]
-	]); 
-	
 	// Stations come from the live feed over the full world extent, but the
 	// model only measures inside the study area, so the ones outside it are
 	// dropped rather than colouring an area that was never surveyed.
-	reflex trim_ambient when: every(10 #s) {
+	reflex trim_ambient when: every(10#s) {
 		list<AQI> outside <- list<AQI>(AQI where (not (study_area covers each.shape)));
 		if (length(outside) > 0) {
 			ask outside {
 				do die;
 			}
-		}
-	}
-
-	reflex diff {
-		diffuse "phero" on: instant_heatmap matrix: mat_diff;
-		//		diffuse "trial" on: instant_heatmap;
+		} 
 	}
 
 	reflex update {
-	//			instant_heatmap[] <- instant_heatmap[] * decrease_coeff;
-	//			instant_heatmap[] <-0;
 		// Lorries join the emission: they are in the survey counts and their
 		// PM/NOx factors sit an order of magnitude above a car's.
 		ask car_random + motorbike_random + bus_random + lorry_random + dummy_car {
@@ -486,39 +480,11 @@ if (type = "bus") {
 			// contributors the survey and EMISSION_FACTOR describe.
 			string kind <- (type != nil and type in EMISSION_FACTOR.keys) ? type : "car";
 			float factor <- EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"];
-			instant_heatmap[location] <- instant_heatmap[location]
-				+ (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
+			instant_heatmap[location] <- instant_heatmap[location] + (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
 		}
-
 	}
-
 }
-
-//grid pollutant_grid height: 100 width: 100 neighbors: 8 /*schedules: active_cells*/ {
-//	rgb color <- #black;
-//	bool active <- false;
-//	float pollution;
-//
-//	reflex pollution_increase when: active {
-//		list<vehicle> people_on_cell <- vehicle overlapping self;
-//		pollution <- pollution + sum(people_on_cell accumulate (each.get_pollution()));
-//	}
-//
-//	reflex diffusion {
-//		ask neighbors {
-//			pollution <- pollution + 0.05 * myself.pollution;
-//		}
-//
-//		pollution <- pollution * (1 - 8 * 0.05);
-//	}
-//
-//	reflex update {
-//		pollution <- pollution * decrease_coeff;
-//		color <- rgb(255 * pollution/10, 0, 0);
-//		color<-palette([ #white, #white, #orange, #orange, #red, #red, #red])[int(min(pollution,MAX_P)*7/MAX_P)mod 7];
-//	} 
-//} 
-
+ 
 // The 2 km box the survey counts are restricted to. Drawn so the audience can
 // see what was measured. The old `boundary` species in visualization.gaml
 // disappears after one cycle and cannot do that.
@@ -533,5 +499,4 @@ species study_boundary {
 		draw shape.contour color: #white;
 		draw shape.contour + 3 color: #white;
 	}
-
 }

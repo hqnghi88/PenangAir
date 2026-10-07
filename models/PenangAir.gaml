@@ -4,11 +4,12 @@
 * Description: 
 * Tags: Tag1, Tag2, TagN
 ***/
-model main
+model main 
 
 import "main.gaml"
 
 global {
+	 
 	float step <- 1 #s;
 	file icon <- file("../images/xanhsm.png");
 	// Penang data (George Town, EPSG:3857): roads and buildings from
@@ -95,71 +96,25 @@ global {
 		// site_merc because the latter is only built in main.gaml's init,
 		// which has not run yet when this experiment init runs.
 		create api_loader with: [aqi_site_4326::site_4326];
-		ask api_loader {
+		ask api_loader { 
 			do run_thread interval: 60 #second;
 		}
 
 	}
 
-	string map_center <- "48.8566140,2.3522219";
-
-	//	reflex produce_pollutant {
-	//		ask road { 
-	//			speed_coeff <- rnd(12);
-	//		}
-	//
-	//	}
-
-}
-
-experiment exp4Projector autorun: true {
-	// The fleet comes from includes/traffic_counts.csv via main2.gaml, which
-	// sets max_cars / max_motorbikes / max_bus / max_lorries from the survey.
-	// study_half_size and fleet_scale are the two numbers the description asks
-	// to be arguable on the workshop day: how big the study area is, and how
-	// hard to push the counted traffic.
-	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
-	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
-	parameter "% Electrical cars" var: n_cars <- 0 min: 0 max: max_cars;
-	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;
-	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
-	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
-	output synchronized: true {
-	//		layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
-		display "project" background: #black axes: false type: 3d 
-		keystone: [{0.0,0.0,0.0},{0.0,1.0,0.0},{1.0,1.0,0.0},{0.9934502617256865,0.021782863139094277,0.0}]
-		{
-			// Penang: no raster backdrop (vindark.png is Hanoi) -- draw vectors only.
-			species road refresh: false position: {0, 0, 0.05};
-			species study_boundary position: {0, 0, 0.045};
-			species building refresh: false;
-			species car_random position: {0, 0, 0.05};
-			species dummy_car aspect: base position: {0, 0, 0.05};
-			species motorbike_random position: {0, 0, 0.05};
-			species bus_random position: {0, 0, 0.05};
-			species lorry_random position: {0, 0, 0.05};
-
-			mesh instant_heatmap scale: 0 above: 0.5 triangulation: true position: {0, 0, 0.01} transparency: 0.2 color: scale(zone_colors1) smooth: 0;
-			// Declared after the mesh on purpose: in a GAMA display layer order
-			// is draw order, so a species listed before the mesh is painted over
-			// by it and never appears.
-			species AQI position: {0, 0, 0.02};
-		}
-
-	}
 
 }
 
 experiment MainExp autorun: false {
 	// Same CSV-driven fleet as expProj; see main2.gaml load_traffic_counts.
-	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
+//	parameter "Study area half-width (m)" var: study_half_size <- 1000 min: 300 max: 3000 step: 100;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
 	parameter "% Electrical cars" var: n_cars <- 0 min: 0 max: max_cars;
 	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;
 	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	output synchronized: false {
-			layout #split parameters: false navigator: false editors: false consoles: true toolbars: false tray: false tabs: false controls: true;
+			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
 //		display "project" type: 3d {
 //			image ("../includes/ocplight.png");
 //		}
@@ -223,7 +178,7 @@ experiment MainExp autorun: false {
 			// drawn on top of it: layer order = draw order in a GAMA display,
 			// and while this sat before the mesh the heat map painted over it
 			// every cycle, so the marker never appeared on screen at all.
-			species AQI position: {0, 0, 0.02};
+			species AQI;
 			// Panels are declared last so they are drawn on top of the heat map
 			// (layer order = draw order in a GAMA display).
 			species progress_bar position: {0, 0, 0.0001};
@@ -270,7 +225,7 @@ experiment MainExp autorun: false {
 				if (not hit) {
 					rep <- rep + " | NO BAR HIT";
 				}
-				write rep;
+//				write rep;
 			}
 
 		}

@@ -191,7 +191,6 @@ global {
 
 	float decrease_coeff <- 0.99;
 	int size <- 300;
-	field instant_heatmap <- field(size, size);
 
 	// Removed: AMBIENT_SEED_SCALE.
 //
@@ -219,7 +218,8 @@ global {
 	map<string, geometry> legends_geom4 <- ["Electrical Vehicle"::square(80),  "Gas Vehicle"::circle(40),  "Roads"::circle(40)]; 
 	map<rgb, string> legends <- [#cyan::"Electrical Vehicle", #blue::"Gas Vehicle", rgb(#white)::"Roads"];
 	font text <- font("Arial", 18, #bold);
-	font title <- font("Arial", 24, #bold);
+	font title <- font("Arial", 24, #bold); 
+	
 	int get_pollution_threshold(float aqi) {
 		int threshold <- 0;
 		loop thr over: thresholds_pollution.keys {

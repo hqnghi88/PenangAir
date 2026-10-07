@@ -11,7 +11,6 @@ import "main.gaml"
 global {
 	 
 	float step <- 1 #s;
-	file icon <- file("../images/xanhsm.png");
 	// Penang data (George Town, EPSG:3857): roads and buildings from
 	// includes/penang_{roads,buildings}.shp. The fleet is NOT hardcoded here.
 	// main2.gaml reads the real survey flows from includes/traffic_counts.csv
@@ -41,7 +40,7 @@ global {
 		// which has not run yet when this experiment init runs.
 		create api_loader with: [aqi_site_4326::site_4326];
 		ask api_loader { 
-			do run_thread interval: 60 #second;
+//			do run_thread interval: 600 #second;
 		}
 
 	}
@@ -51,7 +50,7 @@ global {
 
 experiment MainExp autorun: false {
 	// Same CSV-driven fleet as expProj; see main2.gaml load_traffic_counts.
-	parameter "Use real traffic data" var: use_traffic_data <- 0;
+//	parameter "Use real traffic data" var: use_traffic_data <- 1;
 	parameter "Fleet scale" var: fleet_scale <- 1.0 min: 0.1 max: 3.0 step: 0.1;
 	parameter "% Electrical cars" var: n_cars <- 0 min: 0 max: max_cars;
 	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;

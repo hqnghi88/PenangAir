@@ -13,8 +13,6 @@ global {
 	float time_vehicles_move;
 	int nb_recompute_path;
 	float lane_width <- 1.7;
-	file icon <- file("../images/xanhsm.png");
-	file icon_fire <- file("../images/fire.jpg");
 	//Map containing all the weights for the road network graph
 	map<road, float> road_weights;
 }
@@ -128,8 +126,8 @@ species base_vehicle skills: [moving] {
 	//				draw circle(10);
 //		point pos <- compute_position(); 
 //				point pos <- compute_position();
-				draw squircle(50 * sizeCoeff, 6 * sizeCoeff)  texture:(is_electrical?icon: icon_fire)   rotate: heading depth: 25.5 * sizeCoeff;
-//		draw circle(20* sizeCoeff) color:#blue at: pos rotate: heading depth: 1 * sizeCoeff;
+				draw squircle(50 * sizeCoeff, 6 * sizeCoeff)  color: (is_electrical ? #cyan : #violet)   rotate: heading depth: 25.5 * sizeCoeff;
+//		draw circle(20* sizeCoeff) color:#violet at: pos rotate: heading depth: 1 * sizeCoeff;
 		//		draw rectangle(1 * sizeCoeff, sizeCoeff) color: color rotate: heading depth: 1 * sizeCoeff border: #black;
 	} }
 
@@ -173,7 +171,7 @@ species motorbike_random parent: vehicle_random {
 	// area a motorbike has to read as clearly smaller than the car it shares
 	// the lane with, otherwise the mix the survey measured is not legible.
 	aspect default {
-		draw squircle(30 * sizeCoeff, 3 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(30 * sizeCoeff, 3 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
 	}
 }
 
@@ -186,7 +184,7 @@ species car_random parent: vehicle_random {
 
 
 	aspect default {
-		draw squircle(50 * sizeCoeff, 6 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(50 * sizeCoeff, 6 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
 	}
 }
 
@@ -214,7 +212,7 @@ species lorry_random parent: vehicle_random {
 	// Longest glyph in the fleet and wider than a bus, which is how a
 	// 3-axle lorry reads against a 2-axle one at 2 km zoom.
 	aspect default {
-		draw squircle(80 * sizeCoeff, 10 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(80 * sizeCoeff, 10 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
 	}
 }
 
@@ -228,7 +226,7 @@ species bus_random parent: vehicle_random {
 
 	// Longer than a car, narrower than a lorry.
 	aspect default {
-		draw squircle(90 * sizeCoeff, 8 * sizeCoeff) texture: (is_electrical ? icon : icon_fire) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(90 * sizeCoeff, 8 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
 	}
 }
 

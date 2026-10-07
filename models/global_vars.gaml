@@ -47,7 +47,7 @@ global {
 	// Traffic counts -> fleet (see main2.gaml load_traffic_counts).
 	// Scales every surveyed class by the same factor, so the vehicle mix in
 	// includes/traffic_counts.csv is preserved.
-	float fleet_scale <- 1.0;
+	float fleet_scale <- 5.0;
 	// Cap on total agents, for workshop hardware. The fleet is scaled down
 	// uniformly if the survey produces more than this.
 	int max_vehicles <- 900;
@@ -76,7 +76,7 @@ global {
 		date("06 00 00","HH mm ss")::#deepskyblue,
 		date("14 00 00","HH mm ss")::#gold,
 		date("18 00 00","HH mm ss")::#darkorange,
-		date("19 00 00","HH mm ss")::#blue
+		date("19 00 00","HH mm ss")::#violet
 	];
 	float day_time_color_blend_factor <- 0.2;
 	
@@ -217,7 +217,7 @@ global {
 	map<string, geometry> legends_geom1 <- ["Electrical Vehicle"::square(800),  "Gas Vehicle"::circle(400),  "Roads"::circle(400)]; 
 	map<string, geometry> legends_geom2 <- ["Electrical Vehicle"::square(160),  "Gas Vehicle"::circle(80),  "Roads"::circle(80)]; 
 	map<string, geometry> legends_geom4 <- ["Electrical Vehicle"::square(80),  "Gas Vehicle"::circle(40),  "Roads"::circle(40)]; 
-	map<rgb, string> legends <- [#cyan::"Electrical Vehicle", #blue::"Gas Vehicle", rgb(#white)::"Roads"];
+	map<rgb, string> legends <- [#cyan::"Electrical Vehicle", #violet::"Gas Vehicle", rgb(#white)::"Roads"];
 	font text <- font("Arial", 18, #bold);
 	font title <- font("Arial", 24, #bold); 
 	

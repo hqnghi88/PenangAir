@@ -171,6 +171,7 @@ global {
 	string lb_lorries<-"% Electrical Lorries";
 	string lb_rates_EG<-"Total Rate of Electrical vs Gas";
 	string lb_TotalFleet<-"Total Vehicles";
+	string lb_TrafficSource<-"Traffic Source";
 
 	map<string,rgb> palet <- [
 		BUILDING_BASE::#white,

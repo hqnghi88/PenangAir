@@ -80,6 +80,13 @@ global {
 			create bus_random number: 20 with: [type:: "bus"];
 			create lorry_random number: 20 with: [type:: "lorry"];
 		}
+		string traffic_source <- use_traffic_data = 1 ? "REAL (traffic_counts.csv)" : "RANDOM (default fleet)";
+		write "Traffic source: " + traffic_source;
+		if (length(param_indicator where (each.name = lb_TrafficSource)) > 0) {
+			ask first(param_indicator where (each.name = lb_TrafficSource)) {
+				do update(traffic_source);
+			}
+		}
 	}
 
 	// ==================================================================

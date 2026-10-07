@@ -57,7 +57,7 @@ experiment MainExp autorun: false {
 	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	output synchronized: false {
-			layout #split parameters: false navigator: false editors: false consoles: true toolbars: false tray: false tabs: false controls: true;
+			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
  
 
 		display main type: opengl background: #black axes: false {

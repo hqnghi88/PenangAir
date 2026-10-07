@@ -11,6 +11,16 @@ import "../global_vars.gaml"
 import "traffic.gaml"
 global {
 	field instant_heatmap <- field(size, size);
+	// Live measured PM2.5 (ug/m3) from the AQI feed, pushed in by api_loader's
+	// loadAQ. main.gaml's update reflex injects it as a uniform background
+	// (with a decay step) so the modelled field reflects the real ambient read.
+	float ambient_pm25 <- 0.0;
+	// Simulation cycle counter used to seed the ambient reading only briefly.
+	int cycle_count <- 0;
+	// How strongly the measured ambient reading enters the heat map (0 = off,
+	// 1 = full PM2.5 value as a uniform floor). Kept small so it tints the
+	// background without overwriting the traffic gradient.
+	float AMBIENT_SCALE <- 1.0;
 	// Constants
 	map<string, float> ALLOWED_AMOUNT <- ["CO" :: 30000 * 10e-6, "NOx" :: 200 * 10e-6, "SO2" :: 350 * 10e-6, "PM" :: 300 * 10e-6]; // Unit: g/m3
 	// g/km. Car and motorbike values come from the original VinUni model;
@@ -32,7 +42,7 @@ global {
 	// field settles to a quasi-steady maximum rather than growing without
 	// bound: measured at 0.2 it levelled off near 365, and the level scales
 	// linearly with this constant.
-	float EMISSION_SCALE <- 0.2;
+	float EMISSION_SCALE <- 0.15;
 	 
 	matrix<float> mat_diff <- matrix(
 		[[1 / 20, 1 / 20, 1 / 20], [1 / 20, 3 / 5 * pollutant_decay_rate, 1 / 20], [1 / 20, 1 / 20, 1 / 20]]); 
@@ -151,6 +161,7 @@ species api_loader skills: [thread] {
 			if (cur != nil and cur["us_aqi"] != nil) {
 				aqi_val <- float(cur["us_aqi"]);
 				pm25_val <- float(cur["pm2_5"]);
+				ambient_pm25 <- pm25_val;
 			}
 
 			if (c["latitude"] != nil and c["longitude"] != nil) {
@@ -163,12 +174,13 @@ species api_loader skills: [thread] {
 		catch {
 			write "AQI feed unreachable (offline?).";
 		}
-
 		if (aqi_val < 0.0) {
 			ask (param_indicator where (each.name = lb_AQI_update)) {
 				do update("feed offline, model-only heatmap");
 			}
 		} else {
+			
+		write "AQI "+aqi_val;
 			// One station, at the study site. This is the only position inside the
 			// 2 km world envelope where the reading can be shown at all; the
 			// cell it was measured at is off-map. The label carries the cell

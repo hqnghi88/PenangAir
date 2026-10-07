@@ -75,10 +75,10 @@ global {
 		if (use_traffic_data = 1) {
 			do load_traffic_counts;
 		} else {
-			create car_random number: 200 with: [type:: "car"];
-			create motorbike_random number: 100 with: [type:: "motorbike"];
-			create bus_random number: 20 with: [type:: "bus"];
-			create lorry_random number: 20 with: [type:: "lorry"];
+			create car_random number: 50 with: [type:: "car"];
+			create motorbike_random number: 50 with: [type:: "motorbike"];
+			create bus_random number: 50 with: [type:: "bus"];
+			create lorry_random number: 50 with: [type:: "lorry"]; 
 		}
 		string traffic_source <- use_traffic_data = 1 ? "REAL (traffic_counts.csv)" : "RANDOM (default fleet)";
 		write "Traffic source: " + traffic_source;
@@ -455,6 +455,23 @@ global {
 	}
 
 	reflex update {
+		// Decay the heat map so traffic contributions have a finite memory (this
+		// step used to be commented out, so the field could only grow and the
+		// measured ambient value could not be added without flooding it), then
+		// inject the measured regional PM2.5 as a uniform background. The
+		// background settles at ~ambient_pm25; vehicle emissions sit on top.
+		float ambient_decay <- 0.02;
+		instant_heatmap <- instant_heatmap * (1.0 - ambient_decay);
+		// Seed the measured ambient reading only for the first 10 cycles:
+		// adding it every cycle floods the field to a uniform value and the
+		// whole map becomes one flat colour. After the seeding window it
+		// decays away and only the traffic gradient remains.
+		if (cycle_count < 10 and ambient_pm25 > 0) {
+			instant_heatmap[site_merc] <- instant_heatmap[site_merc] + ambient_pm25 * AMBIENT_SCALE;
+		}else{	
+			cycle_count <- 0;
+		}
+		cycle_count <- cycle_count + 1;
 		// Lorries join the emission: they are in the survey counts and their
 		// PM/NOx factors sit an order of magnitude above a car's.
 		ask car_random + motorbike_random + bus_random + lorry_random + dummy_car {
@@ -468,12 +485,21 @@ global {
 			float factor <- EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"];
 			instant_heatmap[location] <- instant_heatmap[location] + (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
 		}
+	} 
+
+	// Spread the heat map to neighbouring cells every cycle. The `diff` reflex
+	// that used to do this sits inside the pollution model's own global block
+	// (pollution.gaml), which does not run when `main` is the active model, so
+	// without this the field stayed flat. mat_diff keeps ~60% in place and
+	// moves ~40% to the 8 neighbours.
+	reflex spread {
+		diffuse "phero" on: instant_heatmap matrix: mat_diff;
 	}
 }
  
 // The 2 km box the survey counts are restricted to. Drawn so the audience can
 // see what was measured. The old `boundary` species in visualization.gaml
-// disappears after one cycle and cannot do that.
+// disappears after one cycle and cannot do that. 
 species study_boundary {
 	geometry shape;
 

@@ -157,27 +157,15 @@ species vehicle_random parent: base_vehicle {
 
 	float get_pollution {
 		return pollution_from_speed() * 1; // coeff_vehicle[type];
-	}
-	// 
-	//	reflex commute {
-	//		do drive_random graph: road_graph;
-	//	}
+	} 
 
 }
 
 species motorbike_random parent: vehicle_random {
 	float aqh <- 15 + rnd(50.0);
 
-	init {
-	//		vehicle_length <- 3.9 #m;
-	//		num_lanes_occupied <- 1;
-		speed <- (10 + rnd(20)) #km / #h;
-		//		proba_block_node <- 0.0;
-		//		proba_respect_priorities <- 1.0;
-		//		proba_respect_stops <- [1.0];
-		//		proba_use_linked_road <- 0.5;
-		//		lane_change_limit <- 2;
-		//		linked_lane_limit <- 1;
+	init { 
+		speed <- (10 + rnd(20)) #km / #h; 
 	}
 
 
@@ -192,16 +180,8 @@ species motorbike_random parent: vehicle_random {
 species car_random parent: vehicle_random {
 	float aqh <- 20 + rnd(100.0);
 
-	init {
-	//		vehicle_length <- 6.8 #m;
-	//		num_lanes_occupied <- 2;
-		speed <- (20 + rnd(10)) #km / #h;
-		//		proba_block_node <- 0.0;
-		//		proba_respect_priorities <- 1.0;
-		//		proba_respect_stops <- [1.0];
-		//		proba_use_linked_road <- 0.0;
-		//		lane_change_limit <- 2;
-		//		linked_lane_limit <- 0;
+	init { 
+		speed <- (20 + rnd(10)) #km / #h; 
 	}
 
 
@@ -214,16 +194,8 @@ species dummy_car parent: vehicle_random {
 	float aqh <- 20 + rnd(100.0);
 
 	init {
-		should_die <- true;
-		//		vehicle_length <- 6.8 #m;
-		//		num_lanes_occupied <- 2;
-		speed <- (20 + rnd(10)) #km / #h;
-		//		proba_block_node <- 0.0;
-		//		proba_respect_priorities <- 1.0;
-		//		proba_respect_stops <- [1.0];
-		//		proba_use_linked_road <- 0.0;
-		//		lane_change_limit <- 2;
-		//		linked_lane_limit <- 0;
+		should_die <- true; 
+		speed <- (20 + rnd(10)) #km / #h; 
 	}
 
 }
@@ -249,16 +221,8 @@ species lorry_random parent: vehicle_random {
 species bus_random parent: vehicle_random {
 	float aqh <- 5 + rnd(2.0);
 
-	init {
-	//		vehicle_length <- 6.8 #m;
-	//		num_lanes_occupied <- 2;
-		speed <- (10 + rnd(10)) #km / #h;
-		//		proba_block_node <- 0.0;
-		//		proba_respect_priorities <- 1.0;
-		//		proba_respect_stops <- [1.0];
-		//		proba_use_linked_road <- 0.0;
-		//		lane_change_limit <- 2;
-		//		linked_lane_limit <- 0;
+	init { 
+		speed <- (10 + rnd(10)) #km / #h; 
 	}
 
 

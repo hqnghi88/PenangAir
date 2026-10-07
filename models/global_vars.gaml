@@ -105,8 +105,8 @@ global {
 
 	// Pollution threshold 
 	string THRESHOLD_HAZARDOUS <- " Hazardous";
-	string THRESHOLD_VERY_UNHEALTY <- " Very Unhealthy";
-	string THRESHOLD_UNHEALTHY <- " Unhealty";
+	string THRESHOLD_VERY_UNHEALTHY <- " Very Unhealthy";
+	string THRESHOLD_UNHEALTHY <- " Unhealthy";
 	string THRESHOLD_UNHEALTHY_SENSITIVE <- " Unhealthy for \nSensitive Groups";
 	string THRESHOLD_MODERATE <- " Moderate";
 	string THRESHOLD_GOOD <- " Good";
@@ -117,7 +117,7 @@ global {
 		THRESHOLD_MODERATE:: #yellow, //rgb(255,255,83,255), 
 		THRESHOLD_UNHEALTHY_SENSITIVE::#orange,//rgb(240,131,51,255),
 		THRESHOLD_UNHEALTHY::#red, //rgb(218,56,50,255), 
-		THRESHOLD_VERY_UNHEALTY::rgb(116,49,121,255),
+		THRESHOLD_VERY_UNHEALTHY::rgb(116,49,121,255),
 		THRESHOLD_HAZARDOUS::rgb(66,18,39,255)
 	];
 	map<rgb,int> zone_colors1 <- [
@@ -142,7 +142,7 @@ global {
 		51::THRESHOLD_MODERATE,
 		101::THRESHOLD_UNHEALTHY_SENSITIVE,
 		151::THRESHOLD_UNHEALTHY,
-		201::THRESHOLD_VERY_UNHEALTY,
+		201::THRESHOLD_VERY_UNHEALTHY,
 		301::THRESHOLD_HAZARDOUS
 	];
 
@@ -247,7 +247,7 @@ global {
 	geometry study_area;
 	//	list<road> open_roads;
 	float traffic_light_interval <- 180#s; //parameter: 'Traffic light interval' init: 60 #s;
-	int use_traffic_data <- 0;
+	int use_traffic_data <- 1;
 	
 } 
 

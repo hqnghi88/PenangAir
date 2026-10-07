@@ -9,6 +9,66 @@ model visualization
 import "../global_vars.gaml"
 
 global {
+	init{
+		
+		// ------------------------------------------------------------------
+		// Penang UI layout.
+		// The Hanoi version hardcoded panel positions in metres (xx, lx, ly,
+		// ...), which are meaningless in the Penang CRS: every panel ended up
+		// ~1.1e7 units away from the map, i.e. off screen. Everything is now
+		// derived from world.shape, so the panels stay glued to the map in
+		// any projection. The map spans world.shape (ctr +/- W/2, H/2), so the
+		// default camera covers it; the side column is placed just outside
+		// that envelope and relies on the display fitting the whole scene.
+		// ------------------------------------------------------------------
+		point ctr <- world.shape.location;
+		float W <- world.shape.width;
+		float H <- world.shape.height;
+		// progress_bar draws its title 10*scale above the bar and its
+		// left/right labels 40*scale below it, so this sets the vertical
+		// spacing needed between two stacked bars.
+		float lab_scale <- H / 1400.0;
+		// World units per screen pixel, used to nudge panels by a few pixels.
+		// Assumes the scene spans the window over ~1200 px; adjust if the
+		// panels need a bigger nudge.
+		float px <- W / 1200.0;
+		// Clock: left column, outside the world envelope. with_box is on so the
+		// panel occupies exactly x..x+width and stays clear of the map.
+		// The y axis reads downwards on screen in this display, hence the
+		// minus sign on the px nudge.
+		float ui_left <- ctr.x - W / 2.0 - W * 0.34;
+		// Right column: outside the world envelope (the map spans
+		// ctr.x +/- W/2), so the panels never cover the map. The display
+		// fits the scene bounds on open, which then include this column.
+		float ui_right <- ctr.x + W / 2.0 + W * 0.04;
+		float bar_w <- W * 0.30;
+		float bar_h <- H * 0.04;
+		// Five bars stacked below the chart: the step has to clear the title
+		// drawn 10*scale above a bar and the labels drawn 40*scale below it.
+		float bar_step <- H * 0.105;
+		float bar_y1 <- ctr.y - H * 0.10;
+
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px, size::22, name::lb_Time, value::"" + string(date("now")), with_box::true, width::W * 0.30, height::H * 0.05];
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.06, size::20, name::lb_TrafficSource, value::(use_traffic_data = 1 ? "REAL (traffic_counts.csv)" : "RANDOM (default fleet)"), with_box::true, width::W * 0.30, height::H * 0.05];
+
+		// max_* now come from the survey (main2.gaml load_traffic_counts), so these
+		// bars show the real counted fleet rather than hand-set numbers. The
+		// labels keep their "% Electrical" wording because that is what the
+		// sliders drive: n_* of max_* vehicles are made electric.
+		create progress_bar with:
+		[x::ui_right, y::bar_y1, width::bar_w, height::bar_h, max_val::(max_cars + max_bus + max_motorbikes + max_lorries), title::lb_rates_EG, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - bar_step, width::bar_w, height::bar_h, max_val::max_cars, title::lb_cars, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 2.0 * bar_step, width::bar_w, height::bar_h, max_val::max_motorbikes, title::lb_motobike, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 3.0 * bar_step, width::bar_w, height::bar_h, max_val::max_bus, title::lb_bus, left_label::"0%", right_label::"100%", scale::lab_scale];
+		create progress_bar with:
+		[x::ui_right, y::bar_y1 - 4.0 * bar_step, width::bar_w, height::bar_h, max_val::max_lorries, title::lb_lorries, left_label::"0%", right_label::"100%", scale::lab_scale];
+
+		create line_graph_aqi with: [x::ui_right, y::ctr.y + H * 0.26, width::bar_w, height::H * 0.22, label::"Hourly AQI", thick_axe::1, thick_line::5];
+		
+	}
 	point midpoint (point a, point b) {
 		return (a + b) / 2;
 	}
@@ -94,7 +154,7 @@ species progress_bar schedules: [] {
 		draw (""+int(frac*100)+"%") at:{x+width/2,y+height/2+100,Z_LVL2}font: font(size_labels) color: #red;
 	}
 
-}
+} 
 
 species param_indicator {
 	float x;

@@ -197,31 +197,31 @@ species api_loader skills: [thread] {
 	}
 
 	action loadtraffic() {
-		ask traffic_incident {
-			do die;
-		}
-
-		// No keyless realtime incident feed exists (the old Bing Maps key is
-		// dead and was hardcoded to Hanoi), so incidents are derived from the
-		// simulation itself: the most-loaded roads become live congestion
-		// incidents. Each incident keeps spawning dummy_car flow through the
-		// existing traffic_incident reflex, like the API ones used to.
-		map<road, int> load <- road as_map (each::length(vehicle_random overlapping (each.shape + 12.0)));
-		list<road> ordered <- list<road>(road sort_by (load[each]));
-		int made <- 0;
-		loop k from: 0 to: length(ordered) - 1 {
-			road r <- ordered[length(ordered) - 1 - k];
-			if (load[r] >= 3 and made < 5) {
-				create traffic_incident with: [
-					location::r.shape.location,
-					description::("congestion x" + string(load[r]) + " on " + string(r.shape.location))
-				];
-				made <- made + 1;
-			}
-		}
-		ask (param_indicator where (each.name = lb_Traffic_Incident)) {
-			do update(string(made) + " live congestion incidents @ " + date("now"));
-		}
+//		ask traffic_incident {
+//			do die;
+//		}
+//
+//		// No keyless realtime incident feed exists (the old Bing Maps key is
+//		// dead and was hardcoded to Hanoi), so incidents are derived from the
+//		// simulation itself: the most-loaded roads become live congestion
+//		// incidents. Each incident keeps spawning dummy_car flow through the
+//		// existing traffic_incident reflex, like the API ones used to.
+//		map<road, int> load <- road as_map (each::length(vehicle_random overlapping (each.shape + 12.0)));
+//		list<road> ordered <- list<road>(road sort_by (load[each]));
+//		int made <- 0;
+//		loop k from: 0 to: length(ordered) - 1 {
+//			road r <- ordered[length(ordered) - 1 - k];
+//			if (load[r] >= 3 and made < 5) {
+//				create traffic_incident with: [
+//					location::r.shape.location,
+//					description::("congestion x" + string(load[r]) + " on " + string(r.shape.location))
+//				];
+//				made <- made + 1;
+//			}
+//		}
+//		ask (param_indicator where (each.name = lb_Traffic_Incident)) {
+//			do update(string(made) + " live congestion incidents @ " + date("now"));
+//		}
 
 	}
 }

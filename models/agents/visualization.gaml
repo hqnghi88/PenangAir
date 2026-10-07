@@ -13,6 +13,23 @@ global {
 		return (a + b) / 2;
 	}
 
+	int get_pollution_threshold(float aqi) {
+		int threshold <- 0;
+		loop thr over: thresholds_pollution.keys {
+			if(aqi > thr) {
+				threshold <- thr;
+			}
+		}
+		return threshold;
+	}
+	
+	string get_pollution_state(float aqi) {
+		return thresholds_pollution[get_pollution_threshold(aqi)];
+	}
+	
+	rgb get_pollution_color(float aqi) {
+		return zone_colors[thresholds_pollution[get_pollution_threshold(aqi)]];		
+	}
 }
 
 species progress_bar schedules: [] {

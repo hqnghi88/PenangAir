@@ -10,32 +10,6 @@ import "agents/traffic.gaml"
 import "agents/pollution.gaml"
 import "agents/visualization.gaml"
 global {
-// Benchmark execution time 
-	float step <- 1#s;
-	// Load shapefiles  
-	// Penang data (see Scale3.gaml header): George Town study box, EPSG:3857.
-	shape_file roads_shape_file <- shape_file("../includes/penang_roads.shp");
-	shape_file buildings_shape_file <- shape_file("../includes/penang_buildings.shp");
-	// Penang: Hanoi intersections file removed (declared but never used).
-	// shape_file intersect0_shape_file <- shape_file("../includes/bigger_map/inter.shp");
-	geometry shape <- envelope(roads_shape_file);
-
-	// ==================================================================
-	// STUDY AREA
-	// ==================================================================
-	// The demonstration description asks for a study area around the site
-	// that is large enough to show traffic interactions but not needlessly
-	// complex for the workshop. Half-width 1000 m gives 2 km x 2 km, which
-	// holds a real junction and its approaches while staying legible on a
-	// projected screen. Exposed as an experiment parameter (300-3000 m) so
-	// the size can be argued with the team on the day.
-	point site_4326 <- {100.316083, 5.409611};
-	point site_merc;
-	float study_half_size <- 1000.0;
-	geometry study_area;
-	//	list<road> open_roads;
-	float traffic_light_interval <- 180#s; //parameter: 'Traffic light interval' init: 60 #s;
-	int use_traffic_data <- 1;
 	//	list<pollutant_grid> active_cells;
 	init {
 		// Built here rather than at declaration time: the world projection is
@@ -100,6 +74,11 @@ global {
 
 		if (use_traffic_data = 1) {
 			do load_traffic_counts;
+		} else {
+			create car_random number: 200 with: [type:: "car"];
+			create motorbike_random number: 100 with: [type:: "motorbike"];
+			create bus_random number: 20 with: [type:: "bus"];
+			create lorry_random number: 20 with: [type:: "lorry"];
 		}
 	}
 

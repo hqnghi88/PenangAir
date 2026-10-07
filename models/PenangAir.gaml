@@ -97,7 +97,7 @@ global {
 		// which has not run yet when this experiment init runs.
 		create api_loader with: [aqi_site_4326::site_4326];
 		ask api_loader { 
-			do run_thread interval: 60 #second;
+			do run_thread interval: 15 #second;
 		}
 
 	}
@@ -115,9 +115,7 @@ experiment MainExp autorun: false {
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	output synchronized: false {
 			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
-//		display "project" type: 3d {
-//			image ("../includes/ocplight.png");
-//		}
+ 
 
 		display main type: opengl background: #black axes: false {
 			overlay position: {50 #px, 50 #px} size: {1 #px, 1 #px} background: #black border: #black rounded: false {

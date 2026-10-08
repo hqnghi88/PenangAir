@@ -29,8 +29,9 @@ global {
 	// PM/NOx factors sit an order of magnitude above a car's.
 	map<string, map<string, float>> EMISSION_FACTOR <- ["motorbike" :: ["CO" :: 3.62, "NOx" :: 0.3, "SO2" :: 0.03, "PM" :: 0.1], "car" :: ["CO" :: 3.62, "NOx" :: 1.5, "SO2" :: 0.17, "PM" :: 0.1], "bus" :: ["CO" :: 13.0, "NOx" :: 7.0, "SO2" :: 0.5, "PM" :: 0.9], "lorry" :: ["CO" :: 15.0, "NOx" :: 9.0, "SO2" :: 0.6, "PM" :: 1.0]];
 
-	// Display scaling applied to every vehicle's contribution on top of its 
-	// per-kilometre factor, currently 1/20 of the unscaled total.
+	// Display scaling applied to every vehicle's contribution on top of its
+	// per-kilometre factor. Raised from 0.15 to 0.6 so congestion is visible
+	// with the CSV-sized fleet.
 	//
 	// Deliberately a separate multiplier rather than dividing the numbers in
 	// EMISSION_FACTOR: those are published g/km figures, and main.gaml's update
@@ -42,8 +43,21 @@ global {
 	// field settles to a quasi-steady maximum rather than growing without
 	// bound: measured at 0.2 it levelled off near 365, and the level scales
 	// linearly with this constant.
-	float EMISSION_SCALE <- 0.15;
+	float EMISSION_SCALE <- 0.6;
 	 
+	init {
+	//		sizeCoeff <- 100;
+		sizeCoeff <- 0.2;
+// aqi_site_4326: the live-feed loader lives in agents/traffic.gaml,
+		// which cannot see main.gaml's site_merc. site_4326 rather than
+		// site_merc because the latter is only built in main.gaml's init,
+		// which has not run yet when this experiment init runs.
+		create api_loader with: [aqi_site_4326::site_4326];
+		ask api_loader { 
+			do run_thread interval: 600 #second;
+		}
+
+	}
 	matrix<float> mat_diff <- matrix(
 		[[1 / 20, 1 / 20, 1 / 20], [1 / 20, 3 / 5 * pollutant_decay_rate, 1 / 20], [1 / 20, 1 / 20, 1 / 20]]); 
 	

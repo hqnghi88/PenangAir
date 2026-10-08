@@ -112,7 +112,8 @@ species base_vehicle skills: [moving] {
 				target <- nil;
 			}
 
-		} }
+		} 
+	}
 
 	float dist <- rnd(1) * 10 + 10.0 * rnd(3);
 	point compute_position {

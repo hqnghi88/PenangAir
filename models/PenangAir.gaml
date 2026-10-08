@@ -31,19 +31,6 @@ global {
 	float WW <- 3.9;
 	float HH <- 3.9;
 
-	init {
-	//		sizeCoeff <- 100;
-		sizeCoeff <- 0.2;
-// aqi_site_4326: the live-feed loader lives in agents/traffic.gaml,
-		// which cannot see main.gaml's site_merc. site_4326 rather than
-		// site_merc because the latter is only built in main.gaml's init,
-		// which has not run yet when this experiment init runs.
-		create api_loader with: [aqi_site_4326::site_4326];
-		ask api_loader { 
-//			do run_thread interval: 600 #second;
-		}
-
-	}
 
 
 }

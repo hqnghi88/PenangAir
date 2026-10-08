@@ -47,7 +47,7 @@ global {
 	// Traffic counts -> fleet (see main2.gaml load_traffic_counts).
 	// Scales every surveyed class by the same factor, so the vehicle mix in
 	// includes/traffic_counts.csv is preserved.
-	float fleet_scale <- 5.0;
+	float fleet_scale <- 50.0;
 	// Cap on total agents, for workshop hardware. The fleet is scaled down
 	// uniformly if the survey produces more than this.
 	int max_vehicles <- 900;

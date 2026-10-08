@@ -8,6 +8,8 @@ model main
 
 import "agents/traffic.gaml"
 import "agents/pollution.gaml"
+import "agents/fire.gaml"
+import "agents/policy.gaml"
 import "agents/visualization.gaml"
 global {
 	//	list<pollutant_grid> active_cells;
@@ -86,6 +88,9 @@ global {
 			ask first(param_indicator where (each.name = lb_TrafficSource)) {
 				do update(traffic_source);
 			}
+		}
+		if (fire_enabled and length(fire_source) = 0) {
+			create fire_source number: nb_fires with: [location::any_location_in(study_area)];
 		}
 	}
 
@@ -482,7 +487,11 @@ global {
 			// the model quotes: lorries and buses now read as the heavy
 			// contributors the survey and EMISSION_FACTOR describe.
 			string kind <- (type != nil and type in EMISSION_FACTOR.keys) ? type : "car";
-			float factor <- EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"];
+			// Congested/idling traffic emits more per cycle: multiply by
+			// (1 + current_congestion). LEZ-modernised vehicles are halved.
+			float factor <- (EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"])
+			              * (modernized ? 0.5 : 1.0)
+			              * (1.0 + current_congestion);
 			instant_heatmap[location] <- instant_heatmap[location] + (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
 		}
 	} 
@@ -494,6 +503,33 @@ global {
 	// moves ~40% to the 8 neighbours.
 	reflex spread {
 		diffuse "phero" on: instant_heatmap matrix: mat_diff;
+	}
+
+	// Live congestion incidents, derived from the simulated load per
+	// road (the old commented-out API version is gone, so the triangle
+	// markers now track real modelled queues). Old markers are cleared
+	// first so incidents do not accumulate.
+	reflex congestion_incidents when: every(100 #cycle) {
+		ask traffic_incident {
+			do die;
+		}
+		list<road> ordered <- list<road>(road sort_by (each.congestion));
+		int made <- 0;
+		if (length(ordered) > 0) {
+			loop k from: 0 to: length(ordered) - 1 {
+				road r <- ordered[length(ordered) - 1 - k];
+				if (r.congestion >= 0.6 and made < 5) {
+					create traffic_incident with: [
+						location::r.shape.location,
+						description::("congestion " + string(int(r.congestion * 100)) + "%")
+					];
+					made <- made + 1;
+				}
+			}
+		}
+		ask (param_indicator where (each.name = lb_Traffic_Incident)) {
+			do update(string(made) + " congestion incidents @ " + date("now"));
+		}
 	}
 }
  

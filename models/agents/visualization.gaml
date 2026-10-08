@@ -50,6 +50,10 @@ global {
 
 		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px, size::22, name::lb_Time, value::"" + string(date("now")), with_box::true, width::W * 0.30, height::H * 0.05];
 		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.06, size::20, name::lb_TrafficSource, value::(use_traffic_data = 1 ? "REAL (traffic_counts.csv)" : "RANDOM (default fleet)"), with_box::true, width::W * 0.30, height::H * 0.05];
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.12, size::20, name::lb_Traffic_Incident, value::"no incidents yet", with_box::true, width::W * 0.30, height::H * 0.05];
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.18, size::20, name::lb_NetworkCongestion, value::"0%", with_box::true, width::W * 0.30, height::H * 0.05];
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.24, size::20, name::lb_ActiveFires, value::"0", with_box::true, width::W * 0.30, height::H * 0.05];
+		create param_indicator with: [x::ui_left, y::ctr.y + H * 0.47 - 50.0 * px + H * 0.30, size::20, name::lb_ActivePolicies, value::"none", with_box::true, width::W * 0.30, height::H * 0.05];
 
 		// max_* now come from the survey (main2.gaml load_traffic_counts), so these
 		// bars show the real counted fleet rather than hand-set numbers. The

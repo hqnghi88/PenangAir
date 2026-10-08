@@ -92,14 +92,16 @@ experiment MainExp autorun: false {
 			species road refresh: false;// position: {0, 0, 0.02};
 			species study_boundary;// position: {0, 0, 0.015};
 			species building refresh: false;
-			species car_random;
-			species dummy_car aspect: base;
-			species motorbike_random;
-			// Each counted class draws its own aspect (traffic2.gaml) so the
-			// mix is readable, and each honours is_electrical so moving a
-			// slider is visible on the map, not only in the numbers.
-			species bus_random;
-			species lorry_random;
+		species car_random;
+		species dummy_car aspect: base;
+		species motorbike_random;
+		// Each counted class draws its own aspect (traffic2.gaml) so the
+		// mix is readable, and each honours is_electrical so moving a
+		// slider is visible on the map, not only in the numbers.
+		species bus_random;
+		species lorry_random;
+		species fire_source;
+		species policy_button;
 
 			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;
 			// The measured ambient station. Declared after the mesh so it is
@@ -150,10 +152,18 @@ experiment MainExp autorun: false {
 					rep <- rep + " | LORRY frac=" + string(pb_lorry.fraction_at(p))
 					      + " n_lorries=" + string(n_lorries) + "/" + string(max_lorries);
 				}
-				if (not hit) {
-					rep <- rep + " | NO BAR HIT";
+			if (not hit) {
+				rep <- rep + " | NO BAR HIT";
+			}
+			// Policy buttons toggle the corresponding intervention switch.
+			loop pb over: policy_button {
+				if (pb.bound != nil and p overlaps pb.bound) {
+					ask pb { do toggle(); }
+					rep <- rep + " | POLICY " + pb.label + " -> " + (pb.active ? "on" : "off");
+					hit <- true;
 				}
-//				write rep;
+			}
+//			write rep;
 			}
 
 		}

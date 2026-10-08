@@ -248,6 +248,24 @@ global {
 	//	list<road> open_roads;
 	float traffic_light_interval <- 180#s; //parameter: 'Traffic light interval' init: 60 #s;
 	int use_traffic_data <- 1;
-	
-} 
+
+	// ==================================================================
+	// POLICY SWITCHES
+	// Toggled live from the policy buttons; declared here so both
+	// agents/fire.gaml (suppression) and agents/policy.gaml (toggle
+	// handler) can read them without a circular import.
+	// ==================================================================
+	bool pol_congestion_charge <- false;
+	bool pol_low_emission_zone <- false;
+	bool pol_public_transport <- false;
+	bool pol_signal_timing <- false;
+	bool pol_telework <- false;
+	bool pol_fire_suppression <- false;
+	bool pol_fires_enabled <- true;
+
+	string lb_ActiveFires <- "Active Fires";
+	string lb_ActivePolicies <- "Active Policies";
+	string lb_NetworkCongestion <- "Network Congestion";
+
+}
 

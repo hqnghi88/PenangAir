@@ -15,6 +15,45 @@ global {
 	float lane_width <- 1.7;
 	//Map containing all the weights for the road network graph
 	map<road, float> road_weights;
+	// Fleet-wide mean road congestion, for the status panel.
+	float network_congestion <- 0.0;
+
+	reflex update_congestion when: every(5 #cycle) {
+		// Weighted load per road: a lorry takes ~3x the space of a car and
+		// a bus ~2x, a motorbike ~0.4x. congestion is load clamped to
+		// capacity, and speed_coeff (12 = free flow) follows it.
+		ask road {
+			float load <- length(car_random overlapping (shape + 12.0)) * 1.0
+			            + length(motorbike_random overlapping (shape + 12.0)) * 0.4
+			            + length(bus_random overlapping (shape + 12.0)) * 2.0
+			            + length(lorry_random overlapping (shape + 12.0)) * 3.0;
+			congestion <- min(1.0, load / capacity);
+			speed_coeff <- max(0.6, 12.0 * (1.0 - congestion));
+		}
+		float total <- 0.0;
+		loop r over: road {
+			total <- total + r.congestion;
+		}
+		network_congestion <- total / max(1, length(road));
+
+		// Route weights penalise congested segments, so every vehicle that
+		// recomputes its path prefers the free-flow alternative.
+		road_weights <- road as_map (each :: each.shape.perimeter * (1.0 + 4.0 * each.congestion));
+
+		// Per-vehicle congestion level, used for both the emission penalty
+		// in main.gaml and the speed reduction below.
+		ask vehicle_random { current_congestion <- 0.0; }
+		loop r over: road {
+			if (r.congestion > 0.0) {
+				ask vehicle_random overlapping (r.shape + 12.0) {
+					current_congestion <- max(current_congestion, r.congestion);
+				}
+			}
+		}
+		ask (param_indicator where (each.name = lb_NetworkCongestion)) {
+			do update(string(int(network_congestion * 100)) + "%");
+		}
+	}
 }
 
 species road schedules: [] {
@@ -30,10 +69,9 @@ species road schedules: [] {
 	bool s2_closed;
 	bool closed;
 	float capacity <- 1 + shape.perimeter / 30;
+	// Live congestion level of this segment, in [0,1].
+	float congestion <- 0.0;
 	float speed_coeff <- 12.0; // 3.0 + rnd(6.0) min: 0.1;
-	action update_speed_coeff (int n_cars_on_road, int n_motorbikes_on_road) {
-		speed_coeff <- (n_cars_on_road + n_motorbikes_on_road <= capacity) ? 1 : exp(-(n_motorbikes_on_road + 4 * n_cars_on_road) / capacity);
-	}
 
 aspect default { 
 		// speed_coeff is 12 while free-flowing and drops towards 0 under load.
@@ -83,6 +121,16 @@ species base_vehicle skills: [moving] {
 	//	list<road> target_roads;
 	geometry targetP;
 	bool is_electrical <- false;
+	// Live congestion level of the segment this vehicle is on, in [0,1].
+	// Written by the update_congestion reflex; read by the emission
+	// penalty in main.gaml and the congestion_speed reflex below.
+	float current_congestion <- 0.0;
+	// Free-flow speed captured on the first cycle, so congestion_speed
+	// can scale back from it rather than compounding the previous cycle.
+	float base_speed <- 0.0;
+	// Set by the Low Emission Zone policy: survivors are modernised and
+	// emit half the PM/NOx of their class factor.
+	bool modernized <- false;
 
 	init {
 		location <- any_location_in(one_of(road));
@@ -104,7 +152,11 @@ species base_vehicle skills: [moving] {
 	//Reflex to move to the target building moving on the road network
 	reflex move when: target != nil {
 	//we use the return_path facet to return the path followed
-		path path_followed <- goto(target: target, on: road_network, recompute_path: false, return_path: true, move_weights: road_weights);
+	// Vehicles on a congested segment re-solve their route against the
+	// congestion-penalised weights every cycle, so queues clear by
+	// re-routing rather than by waiting; a small random re-solve keeps
+	// paths fresh even on smooth roads.
+		path path_followed <- goto(target: target, on: road_network, recompute_path: (current_congestion > 0.5) or flip(0.02), return_path: true, move_weights: road_weights);
 		if (location distance_to target < 10) {
 			if (should_die) {
 				do die;
@@ -152,6 +204,16 @@ species vehicle_random parent: base_vehicle {
 	float pollution_from_speed {
 		float returnedValue <- 1.0;
 		return (returnedValue);
+	}
+
+	// Congestion slows vehicles: up to 80% speed loss on a saturated
+	// segment. current_congestion is rewritten every 5 cycles by the
+	// update_congestion reflex, so this tracks the network state.
+	reflex congestion_speed {
+		if (base_speed = 0.0) {
+			base_speed <- speed;
+		}
+		speed <- base_speed * (1.0 - 0.8 * current_congestion);
 	}
 
 	float get_pollution {

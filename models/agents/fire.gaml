@@ -91,5 +91,11 @@ species fire_source {
 	aspect default {
 		draw circle(radius) color: rgb(255, 69, 0, 140) border: #yellow;
 		draw circle(radius * 0.5) color: rgb(255, 165, 0, 180);
+		// Fire suppression: a blue containment ring clearly outside the
+		// flames, floated a little above them to avoid z-fighting.
+		if (pol_fire_suppression) {
+			draw (circle(radius * 1.6) at_location (location + {0.0, 0.0, 8.0}))
+			    color: rgb(30, 144, 255, 70) border: #dodgerblue;
+		}
 	}
 }

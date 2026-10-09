@@ -489,9 +489,11 @@ global {
 			string kind <- (type != nil and type in EMISSION_FACTOR.keys) ? type : "car";
 			// Congested/idling traffic emits more per cycle: multiply by
 			// (1 + current_congestion). LEZ-modernised vehicles are halved.
+			// Parked vehicles (even-odd rule, off-day) emit nothing.
 			float factor <- (EMISSION_FACTOR[kind]["PM"] + EMISSION_FACTOR[kind]["NOx"])
 			              * (modernized ? 0.5 : 1.0)
-			              * (1.0 + current_congestion);
+			              * (1.0 + current_congestion)
+			              * (active_today ? 1.0 : 0.0);
 			instant_heatmap[location] <- instant_heatmap[location] + (is_electrical ? 0.1 : 1.0) * factor * 3.0 * EMISSION_SCALE;
 		}
 	} 

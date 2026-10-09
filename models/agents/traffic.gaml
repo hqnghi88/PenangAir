@@ -23,10 +23,10 @@ global {
 		// a bus ~2x, a motorbike ~0.4x. congestion is load clamped to
 		// capacity, and speed_coeff (12 = free flow) follows it.
 		ask road {
-			float load <- length(car_random overlapping (shape + 12.0)) * 1.0
-			            + length(motorbike_random overlapping (shape + 12.0)) * 0.4
-			            + length(bus_random overlapping (shape + 12.0)) * 2.0
-			            + length(lorry_random overlapping (shape + 12.0)) * 3.0;
+			float load <- length((car_random where (each.active_today)) overlapping (shape + 12.0)) * 1.0
+			            + length((motorbike_random where (each.active_today)) overlapping (shape + 12.0)) * 0.4
+			            + length((bus_random where (each.active_today)) overlapping (shape + 12.0)) * 2.0
+			            + length((lorry_random where (each.active_today)) overlapping (shape + 12.0)) * 3.0;
 			congestion <- min(1.0, load / capacity);
 			speed_coeff <- max(0.6, 12.0 * (1.0 - congestion));
 		}
@@ -52,6 +52,35 @@ global {
 		}
 		ask (param_indicator where (each.name = lb_NetworkCongestion)) {
 			do update(string(int(network_congestion * 100)) + "%");
+		}
+	}
+
+	// Even-odd day rule: advance the simulation day and decide, per
+	// vehicle, whether it may drive today. Non-payers whose plate
+	// parity mismatches the day park (active_today = false -> speed 0,
+	// grey glyph, no load, no emissions). Road-tax payers always drive.
+	// The dummy cars that flow out of traffic incidents are exempt so
+	// they still reach their target and die as designed.
+	reflex even_odd_rule {
+		sim_day <- int(time / day_length);
+		odd_today <- (sim_day mod 2 = 1);
+		if (not pol_even_odd) {
+			ask (vehicle_random where (each.active_today = false and not (each.should_die = true))) {
+				active_today <- true;
+			}
+		} else {
+			ask (vehicle_random where (not (each.should_die = true))) {
+				active_today <- road_tax_paid or (plate_parity = (odd_today ? 1 : 0));
+			}
+		} 
+		// Keep the panel current; with the rule on it also shows which
+		// day of the rotation we are in, so the parked half is explicable.
+		string pol_str <- active_policies_string();
+		if (pol_even_odd) {
+			pol_str <- pol_str + "[day " + string(sim_day) + (odd_today ? " odd" : " even") + "]";
+		}
+		ask (param_indicator where (each.name = lb_ActivePolicies)) {
+			do update(pol_str);
 		}
 	}
 }
@@ -80,6 +109,11 @@ aspect default {
 		// the moment update_speed_coeff produced a congested road.
 		draw shape + (speed_coeff * sizeCoeff)
 			color: brewer_colors("Reds")[min(8, max(0, int(9 - speed_coeff / 12.0 * 8.0)))];
+		// Signal timing policy: a bright green trace over every street, so
+		// the switch is visible network-wide rather than only in the panel.
+		if (pol_signal_timing) {
+			draw shape.contour color: rgb(0, 255, 120, 140);
+		}
 	}
 
 }
@@ -131,6 +165,13 @@ species base_vehicle skills: [moving] {
 	// Set by the Low Emission Zone policy: survivors are modernised and
 	// emit half the PM/NOx of their class factor.
 	bool modernized <- false;
+	// Even-odd day rule. Every vehicle gets a plate parity at creation;
+	// with pol_even_odd on it may only drive on the matching simulation
+	// day (0 = even day, 1 = odd day) and parks otherwise. Road-tax
+	// payers ignore the rule entirely and go anywhere, any day.
+	int plate_parity <- flip(0.5) ? 0 : 1;
+	bool road_tax_paid <- false;
+	bool active_today <- true;
 
 	init {
 		location <- any_location_in(one_of(road));
@@ -179,7 +220,7 @@ species base_vehicle skills: [moving] {
 	//				draw circle(10);
 //		point pos <- compute_position(); 
 //				point pos <- compute_position();
-				draw squircle(50 * sizeCoeff, 6 * sizeCoeff)  color: (is_electrical ? #cyan : #violet)   rotate: heading depth: 25.5 * sizeCoeff;
+				draw squircle(50 * sizeCoeff, 6 * sizeCoeff) color: (active_today ? (is_electrical ? #cyan : (modernized ? #lime : #violet)) : rgb(120, 120, 120)) rotate: heading depth: 25.5 * sizeCoeff;
 //		draw circle(20* sizeCoeff) color:#violet at: pos rotate: heading depth: 1 * sizeCoeff;
 		//		draw rectangle(1 * sizeCoeff, sizeCoeff) color: color rotate: heading depth: 1 * sizeCoeff border: #black;
 	} }
@@ -199,6 +240,11 @@ species vehicle_random parent: base_vehicle {
 		} else {
 			location <- any_location_in(any(road)); //one_of(non_deadend_nodes).location;
 		}
+		// Vehicles entering the fleet while the road tax is on pay with
+		// the configured probability, same as the initial conversion.
+		if (pol_road_tax) {
+			road_tax_paid <- flip(road_tax_share);
+		}
 	}
 
 	float pollution_from_speed {
@@ -209,11 +255,16 @@ species vehicle_random parent: base_vehicle {
 	// Congestion slows vehicles: up to 80% speed loss on a saturated
 	// segment. current_congestion is rewritten every 5 cycles by the
 	// update_congestion reflex, so this tracks the network state.
+	// Parked vehicles (even-odd rule, off-day) stand still entirely.
 	reflex congestion_speed {
 		if (base_speed = 0.0) {
 			base_speed <- speed;
 		}
-		speed <- base_speed * (1.0 - 0.8 * current_congestion);
+		if (active_today) {
+			speed <- base_speed * (1.0 - 0.8 * current_congestion);
+		} else {
+			speed <- 0.0;
+		}
 	}
 
 	float get_pollution {
@@ -234,7 +285,17 @@ species motorbike_random parent: vehicle_random {
 	// area a motorbike has to read as clearly smaller than the car it shares
 	// the lane with, otherwise the mix the survey measured is not legible.
 	aspect default {
-		draw squircle(30 * sizeCoeff, 3 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(30 * sizeCoeff, 3 * sizeCoeff) color: (active_today ? (is_electrical ? #cyan : (modernized ? #lime : #violet)) : rgb(120, 120, 120)) rotate: heading depth: 25.5 * sizeCoeff;
+		// Badges float above the glyph (z clears its depth) and are sized
+		// to enclose it, otherwise the extruded body hides them entirely.
+		if (active_today and pol_even_odd) {
+			draw (circle(7 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: (plate_parity = 0 ? #yellow : #magenta);
+		}
+		if (active_today and road_tax_paid and pol_road_tax) {
+			draw (circle(22 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: rgb(255, 215, 0, 70) border: #gold;
+		}
 	}
 }
 
@@ -247,7 +308,16 @@ species car_random parent: vehicle_random {
 
 
 	aspect default {
-		draw squircle(50 * sizeCoeff, 6 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(50 * sizeCoeff, 6 * sizeCoeff) color: (active_today ? (is_electrical ? #cyan : (modernized ? #lime : #violet)) : rgb(120, 120, 120)) rotate: heading depth: 25.5 * sizeCoeff;
+		// Badges float above the glyph and enclose it (see motorbike).
+		if (active_today and pol_even_odd) {
+			draw (circle(8 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: (plate_parity = 0 ? #yellow : #magenta);
+		}
+		if (active_today and road_tax_paid and pol_road_tax) {
+			draw (circle(35 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: rgb(255, 215, 0, 70) border: #gold;
+		}
 	}
 }
 
@@ -275,7 +345,16 @@ species lorry_random parent: vehicle_random {
 	// Longest glyph in the fleet and wider than a bus, which is how a
 	// 3-axle lorry reads against a 2-axle one at 2 km zoom.
 	aspect default {
-		draw squircle(80 * sizeCoeff, 10 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(80 * sizeCoeff, 10 * sizeCoeff) color: (active_today ? (is_electrical ? #cyan : (modernized ? #lime : #violet)) : rgb(120, 120, 120)) rotate: heading depth: 25.5 * sizeCoeff;
+		// Badges float above the glyph and enclose it (see motorbike).
+		if (active_today and pol_even_odd) {
+			draw (circle(9 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: (plate_parity = 0 ? #yellow : #magenta);
+		}
+		if (active_today and road_tax_paid and pol_road_tax) {
+			draw (circle(55 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: rgb(255, 215, 0, 70) border: #gold;
+		}
 	}
 }
 
@@ -289,7 +368,22 @@ species bus_random parent: vehicle_random {
 
 	// Longer than a car, narrower than a lorry.
 	aspect default {
-		draw squircle(90 * sizeCoeff, 8 * sizeCoeff) color: (is_electrical ? #cyan : #violet) rotate: heading depth: 25.5 * sizeCoeff;
+		draw squircle(90 * sizeCoeff, 8 * sizeCoeff) color: (active_today ? (is_electrical ? #cyan : (modernized ? #lime : #violet)) : rgb(120, 120, 120)) rotate: heading depth: 25.5 * sizeCoeff;
+		// Badges float above the glyph and enclose it (see motorbike).
+		if (active_today and pol_even_odd) {
+			draw (circle(9 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: (plate_parity = 0 ? #yellow : #magenta);
+		}
+		if (active_today and road_tax_paid and pol_road_tax) {
+			draw (circle(60 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: rgb(255, 215, 0, 70) border: #gold;
+		}
+		// PT boost: every bus gets a blue policy halo sized to enclose
+		// the whole glyph, floating above it.
+		if (active_today and pol_public_transport) {
+			draw (circle(65 * sizeCoeff) at_location (location + {0.0, 0.0, 30.0 * sizeCoeff}))
+			    color: rgb(30, 144, 255, 70) border: #dodgerblue;
+		}
 	}
 }
 

@@ -54,7 +54,7 @@ global {
 		// which has not run yet when this experiment init runs.
 		create api_loader with: [aqi_site_4326::site_4326];
 		ask api_loader { 
-			do run_thread interval: 600 #second;
+//			do run_thread interval: 600 #second;
 		}
 
 	}

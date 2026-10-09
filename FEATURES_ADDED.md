@@ -28,15 +28,38 @@
     red `traffic_incident` markers (max 5), with a live count in the side panel
 
 3. **Policy Intervention**
-- `models/agents/policy.gaml`: 7 clickable policy buttons below the map
+- `models/agents/policy.gaml`: 9 clickable policy buttons below the map
   - **Congestion charge** — removes 30% of private car traffic
   - **Low emission zone** — removes 30% of lorries, modernises surviving lorries/buses
     (half PM/NOx via `modernized`)
   - **PT boost** — adds 15 buses to the fleet
   - **Signal timing** — road capacity x1.5 (toggling off divides it back)
   - **Telework** — removes 20% of all vehicles
+  - **Even-odd days** — every vehicle gets an even/odd plate at creation; with the
+    rule on, even-plated cars may only drive on even simulation days and odd-plated
+    cars only on odd days (one simulated day = `day_length`, 10 min by default).
+    Off-day vehicles park: speed 0, grey glyph, no congestion load, no emissions.
+    Plate parity is shown as a yellow (even) / magenta (odd) dot while the rule is on.
+  - **Road tax** — a `road_tax_share` fraction of the fleet (experiment parameter,
+    default 30%, picked randomly on toggle-on; later additions pay with the same
+    probability) buys an exemption: payers go anywhere, every day, marked with a
+    gold ring. Switching the policy off cancels all passes.
   - **Fire suppression** — 5x slower spread, faster burn-out
   - **Fires on/off** — ignition/enable switch, kills live fires when off
+- Traffic-incident dummy cars are exempt from the even-odd gate so they still
+  reach their target and die as designed.
+
+**Map-visible feedback (every policy changes the map, not just the label):**
+- Congestion charge — red cordon ring + "CONGESTION CHARGE" label over the centre
+- Low emission zone — translucent green disc + "LOW EMISSION ZONE" label;
+  surviving buses/lorries turn lime green (modernised)
+- PT boost — every bus gets a blue policy halo (plus the 15 added buses)
+- Signal timing — bright green trace along every street
+- Telework / congestion charge — the fleet visibly thins out
+- Even-odd — off-day vehicles go grey and park; yellow/magenta plate dots
+- Road tax — payers carry a gold ring
+- Fire suppression — blue containment ring around each fire
+- Fires on/off — fires appear/disappear
 - `models/global_vars.gaml`: the `pol_*` switches (shared by fire and policy without a
   circular import) plus the new panel labels
 - UI indicators (left column): Traffic Incident, Network Congestion, Active Fires,

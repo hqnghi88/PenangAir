@@ -43,6 +43,7 @@ experiment MainExp autorun: false {
 	parameter "% Electrical motorcycles" var: n_motorbikes <- 0 min: 0 max: max_motorbikes;
 	parameter "% Electrical buses" var: n_bus <- 0 min: 0 max: max_bus;
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
+	parameter "Road tax payers share" var: road_tax_share <- 0.3 min: 0.0 max: 1.0 step: 0.05;
 	output synchronized: false {
 			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
  
@@ -100,10 +101,13 @@ experiment MainExp autorun: false {
 		// slider is visible on the map, not only in the numbers.
 		species bus_random;
 		species lorry_random;
-		species fire_source;
+		species fire_source; 
 		species policy_button;
 
 			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;
+			// Policy zones (LEZ fill, congestion-charge cordon) sit above the
+			// heat map so switching a policy on is unmistakable on the map.
+			species policy_overlay;
 			// The measured ambient station. Declared after the mesh so it is
 			// drawn on top of it: layer order = draw order in a GAMA display,
 			// and while this sat before the mesh the heat map painted over it
@@ -157,7 +161,7 @@ experiment MainExp autorun: false {
 			}
 			// Policy buttons toggle the corresponding intervention switch.
 			loop pb over: policy_button {
-				if (pb.bound != nil and p overlaps pb.bound) {
+				if (pb.bound != nil and p overlaps pb.bound) { 
 					ask pb { do toggle(); }
 					rep <- rep + " | POLICY " + pb.label + " -> " + (pb.active ? "on" : "off");
 					hit <- true;

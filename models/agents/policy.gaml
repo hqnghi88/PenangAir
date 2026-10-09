@@ -18,32 +18,29 @@ global {
 		float H <- world.shape.height;
 		point ctr <- world.shape.location;
 		// One row of clickable policy buttons below the world envelope.
-		float bw <- W * 0.13;
+		// Nine buttons now, so each is narrower than the original seven.
+		float bw <- W * 0.098;
 		float bh <- H * 0.06;
-		float gap <- W * 0.008;
-		float x0 <- ctr.x - W * 0.49;
+		float gap <- W * 0.006;
+		float x0 <- ctr.x - W * 0.46;
 		float by <- ctr.y + H * 0.85;
-		create policy_button with: [x::x0, y::by, width::bw, height::bh, code::"charge", label::"Congestion charge", active::pol_congestion_charge];
+		create policy_button with: [x::x0, y::by, width::bw, height::bh, code::"charge", label::"Cong. charge", active::pol_congestion_charge];
 		create policy_button with: [x::x0 + (bw + gap), y::by, width::bw, height::bh, code::"lez", label::"Low emission zone", active::pol_low_emission_zone];
 		create policy_button with: [x::x0 + 2 * (bw + gap), y::by, width::bw, height::bh, code::"pt", label::"PT boost", active::pol_public_transport];
 		create policy_button with: [x::x0 + 3 * (bw + gap), y::by, width::bw, height::bh, code::"signal", label::"Signal timing", active::pol_signal_timing];
 		create policy_button with: [x::x0 + 4 * (bw + gap), y::by, width::bw, height::bh, code::"telework", label::"Telework", active::pol_telework];
-		create policy_button with: [x::x0 + 5 * (bw + gap), y::by, width::bw, height::bh, code::"suppression", label::"Fire suppression", active::pol_fire_suppression];
-		create policy_button with: [x::x0 + 6 * (bw + gap), y::by, width::bw, height::bh, code::"fires", label::"Fires on/off", active::pol_fires_enabled];
+		create policy_button with: [x::x0 + 5 * (bw + gap), y::by, width::bw, height::bh, code::"evenodd", label::"Even-odd days", active::pol_even_odd];
+		create policy_button with: [x::x0 + 6 * (bw + gap), y::by, width::bw, height::bh, code::"roadtax", label::"Road tax", active::pol_road_tax];
+		create policy_button with: [x::x0 + 7 * (bw + gap), y::by, width::bw, height::bh, code::"suppression", label::"Fire suppression", active::pol_fire_suppression];
+		create policy_button with: [x::x0 + 8 * (bw + gap), y::by, width::bw, height::bh, code::"fires", label::"Fires on/off", active::pol_fires_enabled];
+		// Map overlay for the zone policies; built here because its own
+		// geometry prep waits for study_area via a reflex.
+		create policy_overlay;
 	}
 
-	// Comma-separated list of the active switches, for the UI panel.
-	string active_policies_string() {
-		string on <- "";
-		if (pol_congestion_charge) { on <- on + "Charge, "; }
-		if (pol_low_emission_zone) { on <- on + "LEZ, "; }
-		if (pol_public_transport) { on <- on + "PT boost, "; }
-		if (pol_signal_timing) { on <- on + "Signals, "; }
-		if (pol_telework) { on <- on + "Telework, "; }
-		if (pol_fire_suppression) { on <- on + "Fire supp., "; }
-		if (on = "") { return "none"; }
-		return on;
-	}
+	// active_policies_string() now lives in global_vars.gaml so that
+	// traffic.gaml can refresh the panel too (policy cannot be imported
+	// from traffic: the import would be circular).
 
 	action refresh_policy_ui() {
 		ask (param_indicator where (each.name = lb_ActivePolicies)) {
@@ -89,6 +86,25 @@ global {
 			max_bus <- max(1, length(bus_random));
 			max_lorries <- max(1, length(lorry_random));
 		}
+		if (code = "evenodd") {
+			// Switching off releases everyone the rule had parked; the
+			// live gate in traffic.gaml re-applies it when switched on.
+			if (not pol_even_odd) {
+				ask (vehicle_random where (each.active_today = false)) { active_today <- true; }
+			}
+		}
+		if (code = "roadtax") {
+			// road_tax_share of the fleet buys the exemption: payers may
+			// drive on any day under the even-odd rule. Switching off
+			// cancels every pass.
+			if (pol_road_tax) {
+				ask vehicle_random { road_tax_paid <- false; }
+				n <- int(length(vehicle_random) * road_tax_share);
+				ask n among vehicle_random { road_tax_paid <- true; }
+			} else {
+				ask vehicle_random { road_tax_paid <- false; }
+			}
+		}
 		if (code = "fires") {
 			fire_enabled <- pol_fires_enabled;
 			if (not pol_fires_enabled) {
@@ -103,6 +119,37 @@ global {
 			ask first(progress_bar where (each.title = lb_rates_EG)) {
 				max_val <- max_cars + max_bus + max_motorbikes + max_lorries;
 			}
+		}
+	}
+}
+
+// Map-level feedback for the policies that change geography rather than
+// only fleet numbers: the congestion-charge cordon and the low emission
+// zone are painted directly on the map while active. The geometries are
+// built lazily because study_area only exists after main.gaml's init has
+// run (this species' reflex sees it one cycle later).
+species policy_overlay {
+	geometry cordon;
+	geometry lez;
+	bool ready <- false;
+
+	reflex prepare when: (not ready) and (study_area != nil) {
+		cordon <- circle(study_half_size * 0.45) at_location study_area.location;
+		lez <- circle(study_half_size * 0.85) at_location study_area.location;
+		ready <- true;
+	}
+
+	aspect default {
+		if (ready and pol_low_emission_zone) {
+			draw lez color: rgb(0, 200, 0, 50) border: #lime;
+			draw "LOW EMISSION ZONE" at: (lez.location + {0.0, study_half_size * 0.65})
+			    color: #lime anchor: #center font: font(40);
+		}
+		if (ready and pol_congestion_charge) {
+			draw cordon.contour color: #red;
+			draw cordon.contour + 3 color: #red;
+			draw "CONGESTION CHARGE" at: (cordon.location + {0.0, -study_half_size * 0.55})
+			    color: #red anchor: #center font: font(40);
 		}
 	}
 }
@@ -124,6 +171,8 @@ species policy_button {
 			match "pt" { pol_public_transport <- not pol_public_transport; active <- pol_public_transport; }
 			match "signal" { pol_signal_timing <- not pol_signal_timing; active <- pol_signal_timing; }
 			match "telework" { pol_telework <- not pol_telework; active <- pol_telework; }
+			match "evenodd" { pol_even_odd <- not pol_even_odd; active <- pol_even_odd; }
+			match "roadtax" { pol_road_tax <- not pol_road_tax; active <- pol_road_tax; }
 			match "suppression" { pol_fire_suppression <- not pol_fire_suppression; active <- pol_fire_suppression; }
 			match "fires" { pol_fires_enabled <- not pol_fires_enabled; active <- pol_fires_enabled; }
 		}

@@ -262,10 +262,38 @@ global {
 	bool pol_telework <- false;
 	bool pol_fire_suppression <- false;
 	bool pol_fires_enabled <- true;
+	// Even-odd day rule: vehicles carry an even/odd plate and may only
+	// drive on the matching simulation day unless they paid road tax.
+	bool pol_even_odd <- false;
+	bool pol_road_tax <- false;
+	// Share of the fleet that pays the road tax (exempt from even-odd).
+	float road_tax_share <- 0.3;
+	// One simulated day; short enough that the odd/even flip is visible
+	// in a demo run (600 s = 10 min per day).
+	float day_length <- 600 #s;
+	int sim_day <- 0;
+	bool odd_today <- false;
 
 	string lb_ActiveFires <- "Active Fires";
 	string lb_ActivePolicies <- "Active Policies";
 	string lb_NetworkCongestion <- "Network Congestion";
+
+	// Comma-separated list of the active switches, for the UI panel.
+	// Lives here rather than in agents/policy.gaml because traffic.gaml
+	// also refreshes the panel and cannot import policy (circular).
+	string active_policies_string() {
+		string on <- "";
+		if (pol_congestion_charge) { on <- on + "Charge, "; }
+		if (pol_low_emission_zone) { on <- on + "LEZ, "; }
+		if (pol_public_transport) { on <- on + "PT boost, "; }
+		if (pol_signal_timing) { on <- on + "Signals, "; }
+		if (pol_telework) { on <- on + "Telework, "; }
+		if (pol_even_odd) { on <- on + "Even-odd, "; }
+		if (pol_road_tax) { on <- on + "Road tax, "; }
+		if (pol_fire_suppression) { on <- on + "Fire supp., "; }
+		if (on = "") { return "none"; }
+		return on;
+	}
 
 }
 

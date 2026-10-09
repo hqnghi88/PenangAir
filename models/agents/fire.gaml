@@ -30,38 +30,6 @@ global {
 	float fire_spread_rate <- 0.02;
 	// Hard cap on live fires so a spread run cannot stall the reflex loop.
 	int max_fires <- 12;
-
-	// Fires are (re)seeded here rather than in an init block: study_area is
-	// only built in main.gaml's init, which runs after this one, so
-	// creating agents here would see a nil study_area. Every creation
-	// passes an explicit location inside the study box.
-	reflex maintain_fires when: every(5 #cycle) {
-		if (not fire_enabled) {
-			ask fire_source { do die; }
-		} else {
-			// Ignition: top up towards the target population, slowly.
-			if (length(fire_source) < nb_fires and length(fire_source) < max_fires and flip(fire_ignite_rate)) {
-				create fire_source with: [location::any_location_in(study_area)];
-			}
-			// Spread: an established fire may throw a new one nearby.
-			// Fire suppression (policy) cuts the chance. Iterating a
-			// snapshot so fires created here are not visited in the same
-			// pass, which would needlessly re-seed from them.
-			float spread_scale <- pol_fire_suppression ? 0.2 : 1.0;
-			list<fire_source> snapshot <- list<fire_source>(fire_source);
-			loop f over: snapshot {
-				if (length(fire_source) < max_fires and flip(fire_spread_rate * spread_scale)) {
-					point cand <- f.location + {rnd(-fire_radius * 2, fire_radius * 2), rnd(-fire_radius * 2, fire_radius * 2)};
-					if (study_area covers cand) {
-						create fire_source with: [location::cand];
-					}
-				}
-			}
-		}
-		ask (param_indicator where (each.name = lb_ActiveFires)) {
-			do update(string(length(fire_source)));
-		}
-	}
 }
 
 species fire_source {

@@ -14,7 +14,10 @@
   wanders realistically — direction veers and strength gusts every 10 cycles (random
   walk), rebuilding the kernel so plumes drift like wind-borne ash; off it spreads
   symmetrically. Every kernel sums to exactly 0.994, so overall levels never change
-- Fires are seeded in `main.gaml` init (after `study_area` exists) and topped up every 5 cycles
+- Fires are seeded in `main.gaml` init (after `study_area` exists) and topped up every 5
+  cycles by the `maintain_fires` reflex, which also lives in `main.gaml`'s global block
+  (reflexes of imported files' globals — as in `fire.gaml`/`pollution.gaml` — do not run
+  when `main` is the active model)
 - Rendered as layered orange/red circles on top of the heat map
 
 2. **Traffic Model Enhancement & Congestion Reduction with Policies**
@@ -71,7 +74,22 @@
 - Even-odd — only the designated street subset changes: open-today restricted
   roads wear their parity colour (yellow = even-only, magenta = odd-only),
   denied-today roads turn dark red; vehicles waiting on those roads go grey
-  with their plate dot visible
+  with their plate dot visible. Two live charts in the dedicated `stat`
+  display (feed refreshed every cycle, horizontal legend each):
+  **fleet under the rule** (even/odd driving, waiting, enforcement
+  turn-backs — spikes at day flips and when the policy is toggled on) and
+  **network effect** (fleet driving %, mean speed km/h, congestion % —
+  rates on a shared 0-100 axis so toggling the policy reads as a step).
+  Policy buttons are hit-tested with a plain 2D box test (the old
+  polygon-overlap test could miss because the buttons sit at an elevated
+  z), so toggling definitely flips the rule.
+  Root causes of the earlier "nothing happens" fixed: the gate/congestion/
+  parity/chart reflexes lived in traffic.gaml's global block, which does
+  not run when `main` is the active model (moved into main.gaml), and
+  fleet-wide asks used the bare `vehicle_random` parent name, which does
+  not enumerate the concrete subtypes (all fleet asks now build the
+  explicit union `[] + car_random + motorbike_random + bus_random +
+  lorry_random`)
 - Road tax — payers are repainted solid gold body + floating gold ring;
   they stay mobile on every day while the even-odd rule is on
 - Fire suppression — blue containment ring around each fire

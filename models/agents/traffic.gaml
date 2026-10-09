@@ -17,107 +17,25 @@ global {
 	map<road, float> road_weights;
 	// Fleet-wide mean road congestion, for the status panel.
 	float network_congestion <- 0.0;
+	// Even-odd chart feed. The closed-road count was constant (the
+	// designated subset never changes), so it is replaced by statistics
+	// that react to the rule: enforcement turn-backs, fleet size and the
+	// achieved mean speed of the driving fleet.
+	int nb_even_active <- 0;
+	int nb_odd_active <- 0;
+	int nb_even_waiting <- 0;
+	int nb_odd_waiting <- 0;
+	// Vehicles caught on a road that can never admit their plate during
+	// the last gate window (5 cycles). Spikes when the day flips or the
+	// policy is switched on.
+	int nb_turnbacks <- 0;
+	// Alive, non-dummy fleet size and mean speed (km/h) of its driving
+	// part — both refreshed together with the counts.
+	int nb_fleet <- 1;
+	float mean_speed_kmh <- 0.0;
 
-	reflex update_congestion when: every(5 #cycle) {
-		// Weighted load per road: a lorry takes ~3x the space of a car and
-		// a bus ~2x, a motorbike ~0.4x. congestion is load clamped to
-		// capacity, and speed_coeff (12 = free flow) follows it.
-		ask road {
-			float load <- length((car_random where (each.active_today)) overlapping (shape + 12.0)) * 1.0
-			            + length((motorbike_random where (each.active_today)) overlapping (shape + 12.0)) * 0.4
-			            + length((bus_random where (each.active_today)) overlapping (shape + 12.0)) * 2.0
-			            + length((lorry_random where (each.active_today)) overlapping (shape + 12.0)) * 3.0;
-			congestion <- min(1.0, load / capacity);
-			// The colour driver eases towards its new level (25% per update)
-			// so the ramp on the map drifts instead of flickering; congestion
-			// itself stays exact for routing, emissions and re-routing.
-			speed_coeff <- speed_coeff + 0.25 * (max(0.6, 12.0 * (1.0 - congestion)) - speed_coeff);
-		}
-		float total <- 0.0;
-		loop r over: road {
-			total <- total + r.congestion;
-		}
-		network_congestion <- total / max(1, length(road));
-
-		// Route weights penalise congested segments, so every vehicle that
-		// recomputes its path prefers the free-flow alternative.
-		road_weights <- road as_map (each :: each.shape.perimeter * (1.0 + 4.0 * each.congestion));
-
-		// Per-vehicle congestion level, used for both the emission penalty
-		// in main.gaml and the speed reduction below.
-		ask vehicle_random { current_congestion <- 0.0; }
-		loop r over: road {
-			if (r.congestion > 0.0) {
-				ask vehicle_random overlapping (r.shape + 12.0) {
-					current_congestion <- max(current_congestion, r.congestion);
-				}
-			}
-		}
-		ask (param_indicator where (each.name = lb_NetworkCongestion)) {
-			do update(string(int(network_congestion * 100)) + "%");
-		}
-	}
-
-	// The even/odd switch follows the real calendar: parity is the day of
-	// month of the actual current date (date("now")), not a cycle counter,
-	// so the model always agrees with the clock on the wall. The panel
-	// shows the day-of-month it is using.
-	reflex advance_day {
-		date today <- date("now");
-		odd_today <- (today.day mod 2 = 1);
-		string pol_str <- active_policies_string();
-		if (pol_even_odd) {
-			pol_str <- pol_str + "[day " + string(today.day) + (odd_today ? " odd" : " even") + "]";
-		}
-		ask (param_indicator where (each.name = lb_ActivePolicies)) {
-			do update(pol_str);
-		}
-	}
-
-	// Even-odd day rule, road level: only the designated subset of streets
-	// is denied each day, never the whole network. road.parity_restriction
-	// is -1 (open), 0 (even-only) or 1 (odd-only). A non-payer may stand on
-	// restricted road R only when R matches BOTH today's parity and its own
-	// plate; otherwise it waits (grey, speed 0, no load, no emissions) until
-	// that parity's day comes round again — or, if the road can never admit
-	// it (plate mismatch), it is turned back to the nearest admissible road.
-	// Road-tax payers ignore the rule entirely. Incident dummy cars are
-	// exempt so they still reach their target and die as designed.
-	reflex even_odd_gate when: every(5 #cycle) {
-		if (not pol_even_odd) {
-			ask (vehicle_random where (each.active_today = false and not (each.should_die = true))) {
-				active_today <- true;
-			}
-		} else {
-			int d <- odd_today ? 1 : 0;
-			ask (vehicle_random where (not (each.should_die = true))) {
-				if (road_tax_paid) {
-					active_today <- true;
-				} else {
-					road r <- road closest_to self;
-					bool ok <- (r = nil) or (r.parity_restriction = -1)
-					    or (r.parity_restriction = d and r.parity_restriction = plate_parity);
-					if (ok) {
-						active_today <- true;
-					} else if (r.parity_restriction = plate_parity) {
-						// Own-parity road: it reopens on that parity's day.
-						active_today <- false;
-					} else {
-						// Never admissible for this plate: turn back to a
-						// road we may use and re-target there.
-						list<road> admissible <- road where (each.parity_restriction = -1 or each.parity_restriction = plate_parity);
-						if (length(admissible) > 0) {
-							road safe <- admissible closest_to self;
-							location <- any_location_in(safe);
-							target <- any_location_in(safe);
-						}
-						active_today <- true;
-					}
-				}
-			}
-		} 
-	}
 }
+
 
 species road schedules: [] {
 	rgb color <- #white;
@@ -221,6 +139,9 @@ species base_vehicle skills: [moving] {
 	int plate_parity <- flip(0.5) ? 0 : 1;
 	bool road_tax_paid <- false;
 	bool active_today <- true;
+	// Simulation time of the last enforcement turn-back; the gate counts
+	// recent ones (window = gate period) to chart enforcement pressure.
+	float last_turnback_at <- -1000.0;
 
 	init {
 		location <- any_location_in(one_of(road));

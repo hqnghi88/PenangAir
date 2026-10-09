@@ -54,6 +54,10 @@ global {
 	// directly callable from a species).
 	action apply_policy(string code) {
 		int n;
+		// The fleet lives in the four concrete subtypes; the bare parent
+		// species name does not enumerate them, so fleet-wide effects build
+		// the union explicitly (same pattern as even_odd_stats in main.gaml).
+		list<vehicle_random> fleet <- [] + car_random + motorbike_random + bus_random + lorry_random;
 		if (code = "charge" and pol_congestion_charge) {
 			// 30% of private car traffic shifts away under the charge.
 			n <- int(length(car_random) * 0.3);
@@ -80,8 +84,8 @@ global {
 		}
 		if (code = "telework" and pol_telework) {
 			// 20% of all road traffic stays home.
-			n <- int(length(vehicle_random) * 0.2);
-			ask n among vehicle_random { do die; }
+			n <- int(length(fleet) * 0.2);
+			ask n among fleet { do die; }
 			max_cars <- max(1, length(car_random));
 			max_motorbikes <- max(1, length(motorbike_random));
 			max_bus <- max(1, length(bus_random));
@@ -89,9 +93,9 @@ global {
 		}
 		if (code = "evenodd") {
 			// Switching off releases everyone the rule had waiting; the
-			// road-level gate in traffic.gaml re-applies on switch-on.
+			// road-level gate in main.gaml re-applies on switch-on.
 			if (not pol_even_odd) {
-				ask (vehicle_random where (each.active_today = false)) { active_today <- true; }
+				ask (fleet where (each.active_today = false)) { active_today <- true; }
 			}
 		}
 		if (code = "roadtax") {
@@ -99,11 +103,11 @@ global {
 			// drive on any day under the even-odd rule. Switching off
 			// cancels every pass.
 			if (pol_road_tax) {
-				ask vehicle_random { road_tax_paid <- false; }
-				n <- int(length(vehicle_random) * road_tax_share);
-				ask n among vehicle_random { road_tax_paid <- true; }
+				ask fleet { road_tax_paid <- false; }
+				n <- int(length(fleet) * road_tax_share);
+				ask n among fleet { road_tax_paid <- true; }
 			} else {
-				ask vehicle_random { road_tax_paid <- false; }
+				ask fleet { road_tax_paid <- false; }
 			}
 		}
 		if (code = "fires") {
@@ -169,6 +173,13 @@ species policy_button {
 	string label;
 	bool active;
 	geometry bound;
+
+	init {
+		// Built at creation, not lazily in the aspect, so hit-testing can
+		// never depend on the button having been drawn first.
+		bound <- polygon([{x, y}, {x + width, y}, {x + width, y + height}, {x, y + height}, {x, y}])
+			at_location {x + width / 2, y + height / 2, Z_LVL2};
+	}
 
 	action toggle() {
 		switch code {

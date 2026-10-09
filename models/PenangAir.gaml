@@ -45,8 +45,33 @@ experiment MainExp autorun: false {
 	parameter "% Electrical lorries" var: n_lorries <- 0 min: 0 max: max_lorries;
 	parameter "Road tax payers share" var: road_tax_share <- 0.3 min: 0.0 max: 1.0 step: 0.05;
 	output synchronized: false {
-			layout #split parameters: false navigator: false editors: false consoles: false toolbars: false tray: false tabs: false controls: true;
- 
+			layout #split parameters: false navigator: false editors: false consoles:false toolbars: false tray: false tabs: false controls: true;
+ 		display stat{
+ 			
+			// Left: who the rule lets out. Parity lines cross at each day
+			// flip, waiting spikes as off-parity cars park, turn-backs show
+			// enforcement catching wrong plates on never-admissible roads.
+			chart "Even-odd - fleet under the rule" type: series style: line
+			      position: {0, 0} size: {1, 0.5}
+			      series_label_position: legend legend_orientation: horizontal
+			      {
+				data "Even driving" value: nb_even_active color: #yellow;
+				data "Odd driving" value: nb_odd_active color: #magenta;
+				data "Waiting" value: nb_even_waiting + nb_odd_waiting color: #orange;
+				data "Turn-backs" value: nb_turnbacks color: #red;
+			}
+			// Right: network-wide outcome as rates on one 0-100 axis.
+			// Toggle the policy to see fleet share step down, congestion
+			// ease and achieved speed recover.
+			chart "Even-odd - network effect" type: series style: line
+			      position: {0, 0.5} size: {1, 0.5}
+			      series_label_position: legend legend_orientation: horizontal
+			      {
+				data "Fleet driving %" value: 100.0 * (nb_even_active + nb_odd_active) / nb_fleet color: #red;
+				data "Mean speed km/h" value: mean_speed_kmh color: #cyan;
+				data "Congestion %" value: network_congestion * 100 color: #lime;
+			}
+ 		}
 
 		display main type: opengl background: #black axes: false {
 			overlay position: {50 #px, 50 #px} size: {1 #px, 1 #px} background: #black border: #black rounded: false {
@@ -65,7 +90,7 @@ experiment MainExp autorun: false {
 					draw square(40 #px) at: {20 #px, y} color: rgb(key, 1.0);
 					draw label at: {60 #px, y} anchor: #left_center color: #white font: text;
 					y <- y + 40 #px;
-				}
+				} 
 
 				y <- y + 340 #px;
 				draw "Icons" at: {0, y} anchor: #top_left color: #white font: title;
@@ -160,8 +185,14 @@ experiment MainExp autorun: false {
 				rep <- rep + " | NO BAR HIT";
 			}
 			// Policy buttons toggle the corresponding intervention switch.
+			// Plain 2D box test in world coordinates: the button polygons
+			// sit at z = Z_LVL2 while #user_location can come back on the
+			// ground plane, so `overlaps` could miss them entirely and a
+			// click silently did nothing — the charts then just kept
+			// drawing the policy-off baseline (flat lines, no waiting,
+			// no turn-backs).
 			loop pb over: policy_button {
-				if (pb.bound != nil and p overlaps pb.bound) { 
+				if (p.x >= pb.x and p.x <= pb.x + pb.width and p.y >= pb.y and p.y <= pb.y + pb.height) {
 					ask pb { do toggle(); }
 					rep <- rep + " | POLICY " + pb.label + " -> " + (pb.active ? "on" : "off");
 					hit <- true;

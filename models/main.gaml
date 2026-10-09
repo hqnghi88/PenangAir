@@ -341,10 +341,145 @@ global {
 		}
 	}
 
+	// These four reflexes (congestion, real-calendar parity, the even-odd
+	// gate and the even-odd chart feed) used to live in traffic.gaml's
+	// global block — but reflexes of an imported file's global do not run
+	// when `main` is the active model (the reason pollution.gaml's `diff`
+	// had to move here too). While they sat there they were dead code:
+	// no vehicle was ever parked or turned back, congestion never changed
+	// and the even-odd charts stayed flat no matter what the buttons did.
+	// Moved verbatim into main's global, whose reflexes do tick.
+
+	reflex update_congestion when: every(5 #cycle) {
+		// Weighted load per road: a lorry takes ~3x the space of a car and
+		// a bus ~2x, a motorbike ~0.4x. congestion is load clamped to
+		// capacity, and speed_coeff (12 = free flow) follows it.
+		ask road {
+			float load <- length((car_random where (each.active_today)) overlapping (shape + 12.0)) * 1.0
+			            + length((motorbike_random where (each.active_today)) overlapping (shape + 12.0)) * 0.4
+			            + length((bus_random where (each.active_today)) overlapping (shape + 12.0)) * 2.0
+			            + length((lorry_random where (each.active_today)) overlapping (shape + 12.0)) * 3.0;
+			congestion <- min(1.0, load / capacity);
+			// The colour driver eases towards its new level (25% per update)
+			// so the ramp on the map drifts instead of flickering; congestion
+			// itself stays exact for routing, emissions and re-routing.
+			speed_coeff <- speed_coeff + 0.25 * (max(0.6, 12.0 * (1.0 - congestion)) - speed_coeff);
+		}
+		float total <- 0.0;
+		loop r over: road {
+			total <- total + r.congestion;
+		}
+		network_congestion <- total / max(1, length(road));
+
+		// Route weights penalise congested segments, so every vehicle that
+		// recomputes its path prefers the free-flow alternative.
+		road_weights <- road as_map (each :: each.shape.perimeter * (1.0 + 4.0 * each.congestion));
+
+		// Per-vehicle congestion level, used for both the emission penalty
+		// in main.gaml and the speed reduction below. Union of the four
+		// concrete fleet subtypes — the bare parent name is empty.
+		list<vehicle_random> fleet <- [] + car_random + motorbike_random + bus_random + lorry_random;
+		ask fleet { current_congestion <- 0.0; }
+		loop r over: road {
+			if (r.congestion > 0.0) {
+				ask fleet overlapping (r.shape + 12.0) {
+					current_congestion <- max(current_congestion, r.congestion);
+				}
+			}
+		}
+		ask (param_indicator where (each.name = lb_NetworkCongestion)) {
+			do update(string(int(network_congestion * 100)) + "%");
+		}
+	}
+
+	// The even/odd switch follows the real calendar: parity is the day of
+	// month of the actual current date (date("now")), not a cycle counter,
+	// so the model always agrees with the clock on the wall. The panel
+	// shows the day-of-month it is using.
+	reflex advance_day {
+		date today <- date("now");
+		odd_today <- (today.day mod 2 = 1);
+		string pol_str <- active_policies_string();
+		if (pol_even_odd) {
+			pol_str <- pol_str + "[day " + string(today.day) + (odd_today ? " odd" : " even") + "]";
+		}
+		ask (param_indicator where (each.name = lb_ActivePolicies)) {
+			do update(pol_str);
+		}
+	}
+
+	// Even-odd day rule, road level: only the designated subset of streets
+	// is denied each day, never the whole network. road.parity_restriction
+	// is -1 (open), 0 (even-only) or 1 (odd-only). A non-payer may stand on
+	// restricted road R only when R matches BOTH today's parity and its own
+	// plate; otherwise it waits (grey, speed 0, no load, no emissions) until
+	// that parity's day comes round again — or, if the road can never admit
+	// it (plate mismatch), it is turned back to the nearest admissible road.
+	// Road-tax payers ignore the rule entirely. Incident dummy cars are
+	// exempt so they still reach their target and die as designed.
+	reflex even_odd_gate when: every(5 #cycle) {
+		// The fleet is created as the four concrete subtypes; the bare
+		// parent name does not enumerate them, so every fleet-wide ask
+		// builds the union explicitly (same pattern as even_odd_stats).
+		list<vehicle_random> fleet <- [] + car_random + motorbike_random + bus_random + lorry_random;
+		if (not pol_even_odd) {
+			ask (fleet where (each.active_today = false and not (each.should_die = true))) {
+				active_today <- true;
+			}
+		} else {
+			int d <- odd_today ? 1 : 0;
+			ask (fleet where (not (each.should_die = true))) {
+				if (road_tax_paid) {
+					active_today <- true;
+				} else {
+					road r <- road closest_to self;
+					bool ok <- (r = nil) or (r.parity_restriction = -1)
+					    or (r.parity_restriction = d and r.parity_restriction = plate_parity);
+					if (ok) {
+						active_today <- true;
+					} else if (r.parity_restriction = plate_parity) {
+						// Own-parity road: it reopens on that parity's day.
+						active_today <- false;
+					} else {
+						// Never admissible for this plate: turn back to a
+						// road we may use and re-target there. Stamp the
+						// event so the chart can count enforcement hits.
+						last_turnback_at <- time;
+						list<road> admissible <- road where (each.parity_restriction = -1 or each.parity_restriction = plate_parity);
+						if (length(admissible) > 0) {
+							road safe <- admissible closest_to self;
+							location <- any_location_in(safe);
+							target <- any_location_in(safe);
+						}
+						active_today <- true;
+					}
+				}
+			}
+		}
+	}
+
+	// Chart feed for the even-odd statistics. Runs every cycle rather
+	// than with the gate, so the chart lines move continuously instead of
+	// stepping every 5 cycles. Pure attribute filters — no enclosing
+	// local is mutated from inside an ask. Meaningful both ways: with
+	// the rule off it is the baseline (everyone driving, no turn-backs),
+	// with it on the series step, ramp and spike as the rule bites.
+	reflex even_odd_stats {
+		list<vehicle_random> all<-[]+car_random+motorbike_random+bus_random+lorry_random;
+		nb_fleet <- length(all where (not (each.should_die = true)));
+		nb_even_active <- length(all where (not (each.should_die = true) and each.active_today and each.plate_parity = 0));
+		nb_odd_active <- length(all where (not (each.should_die = true) and each.active_today and each.plate_parity = 1));
+		nb_even_waiting <- length(all where (not (each.should_die = true) and each.active_today = false and each.plate_parity = 0));
+		nb_odd_waiting <- length(all where (not (each.should_die = true) and each.active_today = false and each.plate_parity = 1));
+		nb_turnbacks <- length(all where (not (each.should_die = true) and each.last_turnback_at > time - 5));
+		list<vehicle_random> driving_set <- all where (not (each.should_die = true) and each.active_today);
+		mean_speed_kmh <- (length(driving_set) = 0) ? 0.0 : mean(driving_set collect each.speed) * 3.6;
+	}
+
 	reflex calculate_aqi when: every(refreshing_rate_plot) { // every(1 #minute) {
 		float aqi <- max(instant_heatmap);
 		ask line_graph_aqi {
-			do update(aqi * 10);
+			do update(aqi * 10); 
 		}
 	// ask indicator_health_concern_level {
 	// do update(aqi);
@@ -519,6 +654,40 @@ global {
 	// wandering wind while the Wind policy is on, symmetric when it is off.
 	reflex spread {
 		diffuse "phero" on: instant_heatmap matrix: (pol_wind ? wind_matrix(wind_angle, wind_strength) : mat_diff_calm);
+	}
+
+	// Fire maintenance, moved verbatim from fire.gaml's global block for
+	// the same reason as `spread`: reflexes of an imported file's global do
+	// not run when `main` is the active model. Fires are (re)seeded here
+	// rather than in an init block: study_area is only built in this
+	// init, so creating agents earlier would see a nil study_area. Every
+	// creation passes an explicit location inside the study box.
+	reflex maintain_fires when: every(5 #cycle) {
+		if (not fire_enabled) {
+			ask fire_source { do die; }
+		} else {
+			// Ignition: top up towards the target population, slowly.
+			if (length(fire_source) < nb_fires and length(fire_source) < max_fires and flip(fire_ignite_rate)) {
+				create fire_source with: [location::any_location_in(study_area)];
+			}
+			// Spread: an established fire may throw a new one nearby.
+			// Fire suppression (policy) cuts the chance. Iterating a
+			// snapshot so fires created here are not visited in the same
+			// pass, which would needlessly re-seed from them.
+			float spread_scale <- pol_fire_suppression ? 0.2 : 1.0;
+			list<fire_source> snapshot <- list<fire_source>(fire_source);
+			loop f over: snapshot {
+				if (length(fire_source) < max_fires and flip(fire_spread_rate * spread_scale)) {
+					point cand <- f.location + {rnd(-fire_radius * 2, fire_radius * 2), rnd(-fire_radius * 2, fire_radius * 2)};
+					if (study_area covers cand) {
+						create fire_source with: [location::cand];
+					}
+				}
+			}
+		}
+		ask (param_indicator where (each.name = lb_ActiveFires)) {
+			do update(string(length(fire_source)));
+		}
 	}
 
 	// Live congestion incidents, derived from the simulated load per

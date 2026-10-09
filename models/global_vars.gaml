@@ -245,6 +245,11 @@ global {
 	point site_merc;
 	float study_half_size <- 1000.0;
 	geometry study_area;
+	// Zone geometries shared between the map overlay and the road aspect
+	// (roads tint themselves amber inside the charge cordon). Built lazily
+	// by policy_overlay once study_area exists.
+	geometry charge_zone;
+	geometry lez_zone;
 	//	list<road> open_roads;
 	float traffic_light_interval <- 180#s; //parameter: 'Traffic light interval' init: 60 #s;
 	int use_traffic_data <- 1;

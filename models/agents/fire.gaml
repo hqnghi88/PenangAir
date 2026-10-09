@@ -19,6 +19,11 @@ global {
 	// Per-fire strength multiplier and footprint radius (m).
 	float fire_intensity <- 1.0;
 	float fire_radius <- 60.0;
+	// Per-cycle PM injected per fire (times intensity). Sized so one fire
+	// clearly dominates its neighbourhood on the heat map: a car puts
+	// ~3 units into one cell per cycle, a bus ~14, so a fire needs tens
+	// per cell to read as the pollution source it is.
+	float fire_emission_scale <- 45.0;
 	// Per-cycle probabilities of a new ignition site and of an existing
 	// fire throwing a spark to a neighbour.
 	float fire_ignite_rate <- 0.05;
@@ -77,13 +82,16 @@ species fire_source {
 		if (intensity <= 0.05 or age > max_age) {
 			do die;
 		} else {
-			// PM injected at the fire and points on its rim, scaled like the
-			// vehicle emissions so both sources share one heat-map magnitude.
-			float e <- intensity * 2.0 * EMISSION_SCALE;
+			// PM injected at the fire, a mid-ring and the rim, so the plume
+			// has a filled footprint instead of a hollow outline. Diffusion
+			// then smears it into a rising column over the following cycles.
+			float e <- intensity * fire_intensity * fire_emission_scale * EMISSION_SCALE;
 			instant_heatmap[location] <- instant_heatmap[location] + e;
 			loop a from: 0 to: 315 step: 45 {
+				point pm <- location + {cos(a) * radius * 0.5, sin(a) * radius * 0.5};
+				instant_heatmap[pm] <- instant_heatmap[pm] + e * 0.75;
 				point p <- location + {cos(a) * radius, sin(a) * radius};
-				instant_heatmap[p] <- instant_heatmap[p] + e * 0.4;
+				instant_heatmap[p] <- instant_heatmap[p] + e * 0.5;
 			}
 		}
 	}

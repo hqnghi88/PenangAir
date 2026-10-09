@@ -129,27 +129,32 @@ global {
 // built lazily because study_area only exists after main.gaml's init has
 // run (this species' reflex sees it one cycle later).
 species policy_overlay {
-	geometry cordon;
-	geometry lez;
 	bool ready <- false;
 
 	reflex prepare when: (not ready) and (study_area != nil) {
-		cordon <- circle(study_half_size * 0.45) at_location study_area.location;
-		lez <- circle(study_half_size * 0.85) at_location study_area.location;
+		charge_zone <- circle(study_half_size * 0.45) at_location study_area.location;
+		lez_zone <- circle(study_half_size * 0.85) at_location study_area.location;
 		ready <- true;
 	}
 
 	aspect default {
 		if (ready and pol_low_emission_zone) {
-			draw lez color: rgb(0, 200, 0, 50) border: #lime;
-			draw "LOW EMISSION ZONE" at: (lez.location + {0.0, study_half_size * 0.65})
+			draw lez_zone color: rgb(0, 200, 0, 50) border: #lime;
+			draw "LOW EMISSION ZONE" at: (lez_zone.location + {0.0, study_half_size * 0.65})
 			    color: #lime anchor: #center font: font(40);
 		}
 		if (ready and pol_congestion_charge) {
-			draw cordon.contour color: #red;
-			draw cordon.contour + 3 color: #red;
-			draw "CONGESTION CHARGE" at: (cordon.location + {0.0, -study_half_size * 0.55})
+			draw charge_zone.contour color: #red;
+			draw charge_zone.contour + 3 color: #red;
+			draw "CONGESTION CHARGE" at: (charge_zone.location + {0.0, -study_half_size * 0.55})
 			    color: #red anchor: #center font: font(40);
+		}
+		// Even-odd status banner: flips once per simulated day, naming
+		// exactly which half of the fleet is parked right now.
+		if (ready and pol_even_odd) {
+			string day_txt <- odd_today ? "ODD DAY - even plates PARKED" : "EVEN DAY - odd plates PARKED";
+			draw day_txt at: (study_area.location + {0.0, study_half_size * 0.92})
+			    color: (odd_today ? #magenta : #yellow) anchor: #center font: font(60);
 		}
 	}
 }

@@ -90,7 +90,7 @@ experiment MainExp autorun: false {
 			// Penang: the Hanoi camera and the two vindark.png raster
 			// mini-maps were removed (Hanoi imagery/coordinates); the panels
 			// below are positioned from world.shape instead.
-			species road refresh: false;// position: {0, 0, 0.02};
+			species road ;// position: {0, 0, 0.02};
 			species study_boundary;// position: {0, 0, 0.015};
 			species building refresh: false;
 		species car_random;
@@ -101,7 +101,7 @@ experiment MainExp autorun: false {
 		// slider is visible on the map, not only in the numbers.
 		species bus_random;
 		species lorry_random;
-		species fire_source; 
+//		species fire_source; 
 		species policy_button;
 
 			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;

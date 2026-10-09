@@ -3,8 +3,10 @@
 1. **More Pollution Sources (Fire)**
 - Added fire sources (open burning) as pollution emitters
 - `agents/fire.gaml`: `fire_source` species and dynamics (ignition, spread, decay, suppression)
-- Each fire injects PM into `instant_heatmap` at its centre and on 8 rim points, using the
-  same `EMIENT_SCALE` scale as vehicle emissions
+- Each fire injects PM into `instant_heatmap` at its centre, a mid-ring and the rim
+  (8 points each), scaled by `fire_emission_scale` (45) so one fire clearly
+  dominates its neighbourhood: cars add ~3 units/cell/cycle, buses ~14,
+  a fire ~27+ per cell while it burns
 - Parameters: `fire_enabled`, `nb_fires`, `fire_intensity`, `fire_radius`, `fire_ignite_rate`,
   `fire_spread_rate`, `max_fires`; suppression driven by the `pol_fire_suppression` policy switch
 - Fires are seeded in `main.gaml` init (after `study_area` exists) and topped up every 5 cycles
@@ -50,14 +52,20 @@
   reach their target and die as designed.
 
 **Map-visible feedback (every policy changes the map, not just the label):**
-- Congestion charge — red cordon ring + "CONGESTION CHARGE" label over the centre
+- Congestion charge — red cordon ring + "CONGESTION CHARGE" label over the centre;
+  every street inside the cordon is overlaid in amber
 - Low emission zone — translucent green disc + "LOW EMISSION ZONE" label;
   surviving buses/lorries turn lime green (modernised)
 - PT boost — every bus gets a blue policy halo (plus the 15 added buses)
-- Signal timing — bright green trace along every street
+- Signal timing — capacity x1.5; road colours ease towards lighter shades as
+  congestion clears (smoothed, no instant repaint)
 - Telework / congestion charge — the fleet visibly thins out
-- Even-odd — off-day vehicles go grey and park; yellow/magenta plate dots
-- Road tax — payers carry a gold ring
+- Even-odd — the whole road network wears today's parity colour (yellow =
+  even day, magenta = odd day; flips once per simulated day), a large
+  "EVEN/ODD DAY - ... PARKED" banner sits over the map, off-day vehicles go
+  grey and stand still, and every car shows its yellow/magenta plate dot
+- Road tax — payers are repainted solid gold body + floating gold ring;
+  they stay mobile on every day while the even-odd rule is on
 - Fire suppression — blue containment ring around each fire
 - Fires on/off — fires appear/disappear
 - `models/global_vars.gaml`: the `pol_*` switches (shared by fire and policy without a

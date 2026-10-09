@@ -57,6 +57,10 @@ species road schedules: [] {
 	// Live congestion level of this segment, in [0,1].
 	float congestion <- 0.0;
 	float speed_coeff <- 12.0; // 3.0 + rnd(6.0) min: 0.1;
+	// Fire damage accrued from fires burning inside the footprint. Grows
+	// while a fire is there; at road_damage_limit the segment closes for
+	// good (set by fire_source.burn) and drops out of the route solver.
+	float fire_damage <- 0.0;
 
 aspect default { 
 		// speed_coeff is 12 while free-flowing and drops towards 0 under load.
@@ -80,6 +84,19 @@ aspect default {
 		// amber, so the tolled area reads directly from the road network.
 		if (pol_congestion_charge and charge_zone != nil and charge_zone covers shape.location) {
 			draw (shape + (speed_coeff * sizeCoeff)) color: rgb(255, 150, 0, 160);
+		}
+		// Fire damage, drawn last so it wins over every other overlay:
+		// scorched surface while accumulating (ember tint, opacity grows
+		// with damage), charred black once closed — the closed segments
+		// are what visibly break the network into separate pockets.
+		if (fire_damage > 0) {
+			if (closed) {
+				draw (shape + (speed_coeff * sizeCoeff))
+				    color: rgb(30, 15, 10, 235) border: #darkred;
+			} else {
+				int ember <- 60 + int(140 * min(1.0, fire_damage / road_damage_limit));
+				draw (shape + (speed_coeff * sizeCoeff)) color: rgb(255, 90, 0, ember);
+			}
 		}
 	}
 
@@ -156,7 +173,11 @@ species base_vehicle skills: [moving] {
 		if (should_die) {
 			target <- any_location_in(targetP);
 		} else {
-			target <- any_location_in(one_of(road));
+			// Destinations avoid fire-closed segments: the point of the
+			// infrastructure damage is that trips reroute around the
+			// burnt pockets instead of ending inside them.
+			list<road> open_roads <- road where (not each.closed);
+			target <- any_location_in(length(open_roads) = 0 ? one_of(road) : one_of(open_roads));
 		}
 
 	}
@@ -166,15 +187,29 @@ species base_vehicle skills: [moving] {
 	// Vehicles on a congested segment re-solve their route against the
 	// congestion-penalised weights every cycle, so queues clear by
 	// re-routing rather than by waiting; a small random re-solve keeps
-	// paths fresh even on smooth roads.
-		path path_followed <- goto(target: target, on: road_network, recompute_path: (current_congestion > 0.5) or flip(0.02), return_path: true, move_weights: road_weights);
+	// paths fresh even on smooth roads. Standing on a fire-closed
+	// segment also forces a re-solve, so traffic leaves burnt roads at
+	// once instead of waiting for the random retry.
+		road here <- road closest_to self;
+		bool severed <- false;
+		if (here != nil) {
+			severed <- here.closed;
+		}
+		path path_followed <- goto(target: target, on: road_network, recompute_path: (current_congestion > 0.5) or severed or flip(0.02), return_path: true, move_weights: road_weights);
 		if (location distance_to target < 10) {
+			// Arrival wins over the nil-path check below: incident dummy
+			// cars must still be able to die on reaching their spot.
 			if (should_die) {
 				do die;
 			} else {
 				target <- nil;
 			}
 
+		} else if (path_followed = nil) {
+			// No route to the destination (a fire may have severed the
+			// network in between). Drop the trip and pick a reachable
+			// one next cycle instead of stalling here forever.
+			target <- nil;
 		} 
 	}
 
@@ -366,6 +401,10 @@ species building schedules: [] {
 	float depth;
 	agent p_cell;
 	int LVL;
+	// Fire damage (see fire_source.burn): grows while a fire burns inside
+	// the footprint, then the building collapses and draws as rubble.
+	float fire_damage <- 0.0;
+	bool destroyed <- false;
 
 //	init {
 //		if height < min_height {
@@ -383,8 +422,20 @@ species building schedules: [] {
 	//			draw shape texture: [roof_texture.path, texture.path] depth: depth color: (type = type_outArea) ? palet[BUILDING_OUTAREA] : palet[BUILDING_BASE] /*border: #darkgrey*/
 	//			/*depth: height * 10*/;
 	//		} else {
-		draw shape color: #grey /*color: (type = type_outArea) ? palet[BUILDING_OUTAREA] : world.get_pollution_color(aqi) texture: [roof_texture.path, texture.path] border: #darkgrey*/
-		depth: depth;
+		if (destroyed) {
+			// Collapsed by fire: flattened black footprint with a scorched
+			// rim, kept shallow so it reads as rubble against the heat map.
+			draw shape color: #black depth: max(1.0, depth * 0.15) border: rgb(80, 20, 20);
+		} else {
+			// Still taking heat: ember tint darkens as damage accumulates.
+			if (fire_damage > 0) {
+				int ember <- 40 + int(80 * min(1.0, fire_damage / bldg_damage_limit));
+				draw shape color: rgb(ember, ember, ember) depth: depth;
+			} else {
+				draw shape color: #grey /*color: (type = type_outArea) ? palet[BUILDING_OUTAREA] : world.get_pollution_color(aqi) texture: [roof_texture.path, texture.path] border: #darkgrey*/
+				depth: depth;
+			}
+		}
 		//		}
 
 	}

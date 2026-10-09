@@ -371,9 +371,9 @@ global {
 		}
 		network_congestion <- total / max(1, length(road));
 
-		// Route weights penalise congested segments, so every vehicle that
-		// recomputes its path prefers the free-flow alternative.
-		road_weights <- road as_map (each :: each.shape.perimeter * (1.0 + 4.0 * each.congestion));
+		// Route weights are rebuilt every cycle by refresh_road_weights
+		// below (they must react to closures the moment a fire causes
+		// one), so only the congestion figures are maintained here.
 
 		// Per-vehicle congestion level, used for both the emission penalty
 		// in main.gaml and the speed reduction below. Union of the four
@@ -390,6 +390,18 @@ global {
 		ask (param_indicator where (each.name = lb_NetworkCongestion)) {
 			do update(string(int(network_congestion * 100)) + "%");
 		}
+	}
+
+	// Route weights, rebuilt every cycle. Congestion terms only change
+	// with update_congestion (every 5 cycles), but fire closures appear
+	// at any moment and vehicles re-solve against this map the same
+	// cycle, so it cannot lag behind: fire-closed segments are weighted
+	// 10000x out — effectively impassable, which fragments the network
+	// into pockets traffic has to route around (a finite penalty, so a
+	// genuinely isolated pocket still has an escape route rather than an
+	// infinite-weight dead end).
+	reflex refresh_road_weights {
+		road_weights <- road as_map (each :: each.shape.perimeter * (each.closed ? 10000.0 : (1.0 + 4.0 * each.congestion)));
 	}
 
 	// The even/odd switch follows the real calendar: parity is the day of
@@ -441,11 +453,11 @@ global {
 						// Own-parity road: it reopens on that parity's day.
 						active_today <- false;
 					} else {
-						// Never admissible for this plate: turn back to a
-						// road we may use and re-target there. Stamp the
-						// event so the chart can count enforcement hits.
-						last_turnback_at <- time;
-						list<road> admissible <- road where (each.parity_restriction = -1 or each.parity_restriction = plate_parity);
+					// Never admissible for this plate: turn back to a
+					// road we may use and re-target there. Stamp the
+					// event so the chart can count enforcement hits.
+					last_turnback_at <- time;
+					list<road> admissible <- road where (not each.closed and (each.parity_restriction = -1 or each.parity_restriction = plate_parity));
 						if (length(admissible) > 0) {
 							road safe <- admissible closest_to self;
 							location <- any_location_in(safe);

@@ -7,8 +7,10 @@
   (8 points each), scaled by `fire_emission_scale` (45) so one fire clearly
   dominates its neighbourhood: cars add ~3 units/cell/cycle, buses ~14,
   a fire ~27+ per cell while it burns
-- Parameters: `fire_enabled`, `nb_fires`, `fire_intensity`, `fire_radius`, `fire_ignite_rate`,
-  `fire_spread_rate`, `max_fires`; suppression driven by the `pol_fire_suppression` policy switch
+- Parameters: `fire_enabled`, `nb_fires` (1), `fire_intensity`, `fire_radius`,
+  `fire_ignite_rate` (0.02), `fire_spread_rate` (0.008), `max_fires` (4); frequency
+  deliberately kept low — fires are rare, consequential events, not a shower.
+  Suppression driven by the `pol_fire_suppression` policy switch
 - Dispersion widened: `wind_matrix` / `mat_diff_calm` are 5x5 kernels (~30% stays, the
   rest travels up to two cells per cycle). With the **Wind** button on, the breeze
   wanders realistically — direction veers and strength gusts every 10 cycles (random
@@ -19,6 +21,16 @@
   (reflexes of imported files' globals — as in `fire.gaml`/`pollution.gaml` — do not run
   when `main` is the active model)
 - Rendered as layered orange/red circles on top of the heat map
+- **Infrastructure damage**: every burn cycle a fire damages roads and buildings inside
+  its footprint (`fire_road_damage` / `fire_bldg_damage` in `fire.gaml`, limits
+  `road_damage_limit` / `bldg_damage_limit` in `global_vars.gaml` so traffic can read
+  them). Roads accrue an ember tint, then **close for good** (~10 cycles of exposure)
+  and draw charred black; buildings darken and collapse to black rubble (~5 cycles).
+  Closed roads are weighted 10000x out of `road_weights` (rebuilt every cycle by
+  `refresh_road_weights`), vehicles re-solve immediately while standing on one,
+  new trip targets skip them, and turn-back landings avoid them — so the network
+  visibly splits into pockets traffic routes around. Damage is permanent: turning
+  fires off does not repair what burnt.
 
 2. **Traffic Model Enhancement & Congestion Reduction with Policies**
 - `models/agents/traffic.gaml`:

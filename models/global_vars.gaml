@@ -267,6 +267,13 @@ global {
 	bool pol_telework <- false;
 	bool pol_fire_suppression <- false;
 	bool pol_fires_enabled <- true;
+	// Fire infrastructure-damage thresholds, shared here because both
+	// agents/fire.gaml (applies the damage) and agents/traffic.gaml
+	// (reads them in the road/building aspects) need them, and traffic
+	// cannot import fire (circular). A road that accrues road_damage_limit
+	// closes for good; a building that accrues bldg_damage_limit collapses.
+	float road_damage_limit <- 0.6;
+	float bldg_damage_limit <- 0.6;
 	// Even-odd day rule: vehicles carry an even/odd plate and may only
 	// drive on the matching simulation day unless they paid road tax.
 	bool pol_even_odd <- false;

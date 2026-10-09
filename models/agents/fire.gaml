@@ -14,8 +14,10 @@ global {
 	// Whether any fires are spawned at all.
 	bool fire_enabled <- true;
 	// Target number of simultaneously burning fires; the maintenance reflex
-	// re-seeds towards this after decay/suppression removes some.
-	int nb_fires <- 3;
+	// re-seeds towards this after decay/suppression removes some. Kept low:
+	// fires now damage infrastructure, so a handful is plenty to split the
+	// road network into pockets that traffic has to route around.
+	int nb_fires <- 1;
 	// Per-fire strength multiplier and footprint radius (m).
 	float fire_intensity <- 1.0;
 	float fire_radius <- 60.0;
@@ -25,11 +27,23 @@ global {
 	// per cell to read as the pollution source it is.
 	float fire_emission_scale <- 45.0;
 	// Per-cycle probabilities of a new ignition site and of an existing
-	// fire throwing a spark to a neighbour.
-	float fire_ignite_rate <- 0.05;
-	float fire_spread_rate <- 0.02;
+	// fire throwing a spark to a neighbour. Both cut well below the old
+	// 0.05 / 0.02 so fires stay a rare event rather than a shower.
+	float fire_ignite_rate <- 0.02;
+	float fire_spread_rate <- 0.008;
 	// Hard cap on live fires so a spread run cannot stall the reflex loop.
-	int max_fires <- 12;
+	int max_fires <- 4;
+
+	// Infrastructure damage, applied every burn cycle to roads and
+	// buildings inside a fire's footprint. Damage accumulates while the
+	// fire burns and is permanent once the fire is out (turn fires off and
+	// the burnt network stays burnt).
+	//   roads:     ~0.06/cycle at intensity 1.0 -> closed after ~10 cycles
+	//   buildings: ~0.12/cycle at intensity 1.0 -> collapse after ~5 cycles
+	// The limits themselves live in global_vars.gaml so traffic.gaml's
+	// aspects can read them without a circular import.
+	float fire_road_damage <- 0.06;
+	float fire_bldg_damage <- 0.12;
 }
 
 species fire_source {
@@ -60,6 +74,22 @@ species fire_source {
 				instant_heatmap[pm] <- instant_heatmap[pm] + e * 0.75;
 				point p <- location + {cos(a) * radius, sin(a) * radius};
 				instant_heatmap[p] <- instant_heatmap[p] + e * 0.5;
+			}
+			// The fire eats the infrastructure around it. Roads inside the
+			// footprint take damage every cycle until they close (drawn
+			// charred, weighted out of the route solver), which is what
+			// splits the network apart; buildings collapse to rubble.
+			ask (road at_distance radius) {
+				fire_damage <- fire_damage + myself.intensity * fire_road_damage;
+				if (fire_damage >= road_damage_limit) {
+					closed <- true;
+				}
+			}
+			ask (building at_distance radius) {
+				fire_damage <- fire_damage + myself.intensity * fire_bldg_damage;
+				if (fire_damage >= bldg_damage_limit) {
+					destroyed <- true;
+				}
 			}
 		}
 	}

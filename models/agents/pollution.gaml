@@ -58,12 +58,44 @@ global {
 		}
 
 	}
-	matrix<float> mat_diff <- matrix(
-		[[1 / 20, 1 / 20, 1 / 20], [1 / 20, 3 / 5 * pollutant_decay_rate, 1 / 20], [1 / 20, 1 / 20, 1 / 20]]); 
+	// Wind state: direction (degrees, 0 = east) and strength wander over
+	// time via the vary_wind reflex in main.gaml, so the breeze veers and
+	// gusts like real weather instead of pointing one fixed way.
+	float wind_angle <- 0.0;
+	float wind_strength <- 0.45;
+
+	// Builds the 5x5 diffusion kernel for the current wind: the same radial
+	// profile as mat_diff_calm (centre ~0.30, ring1 0.05, ring2 0.01875),
+	// each ring's weight leaned towards the wind direction by projecting the
+	// offset onto the wind vector, scaled by wind_strength. Rings are
+	// symmetric in offset, so the lean cancels and the matrix sums to
+	// 0.994 whatever the angle — overall pollution levels never change,
+	// only the direction plumes drift. Used while the Wind button is on.
+	matrix<float> wind_matrix (float angle, float strength) {
+		list<list<float>> rows <- [];
+		loop dy from: -2 to: 2 {
+			list<float> row <- [];
+			loop dx from: -2 to: 2 {
+				int r <- max(abs(dx), abs(dy));
+				float base <- (r = 0) ? 0.30 : ((r = 1) ? 0.05 : 0.01875);
+				float proj <- (r = 0) ? 0.0 : ((dx * cos(angle) + dy * sin(angle)) / r);
+				add (base * (1.0 + strength * proj) * 0.994) to: row;
+			}
+			add row to: rows;
+		}
+		return matrix(rows);
+	}
+	// Wind-off kernel: same radial spread, no directional bias anywhere.
+	matrix<float> mat_diff_calm <- matrix(
+		[[0.0186375, 0.0186375, 0.0186375, 0.0186375, 0.0186375],
+		 [0.0186375, 0.0497, 0.0497, 0.0497, 0.0186375],
+		 [0.0186375, 0.0497, 0.2982, 0.0497, 0.0186375],
+		 [0.0186375, 0.0497, 0.0497, 0.0497, 0.0186375],
+		 [0.0186375, 0.0186375, 0.0186375, 0.0186375, 0.0186375]]); 
 	
 
 	reflex diff {
-		diffuse "phero" on: instant_heatmap matrix: mat_diff;
+		diffuse "phero" on: instant_heatmap matrix: (pol_wind ? wind_matrix(wind_angle, wind_strength) : mat_diff_calm);
 	}
 }
 species AQI {

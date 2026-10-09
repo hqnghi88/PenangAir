@@ -30,10 +30,14 @@ global {
 			loop geom over: roads_shape_file {
 				string nm <- string(geom get ("NAME"));
 				string hw <- string(geom get ("HIGHWAY"));
-				create road(shape: geom, road_name: nm, highway: hw) {
-					if (self.shape.perimeter < 1.0) {
-						do die; }
-				}
+			create road(shape: geom, road_name: nm, highway: hw) {
+				if (self.shape.perimeter < 1.0) {
+					do die; }
+				// Even-odd designation: ~30% even-only, ~30% odd-only,
+				// the rest open every day.
+				float roll <- rnd(1.0);
+				parity_restriction <- roll < 0.3 ? 0 : (roll < 0.6 ? 1 : -1);
+			}
 			}
 
 			// Only the study area is measured and reported, so drop the segments
@@ -498,13 +502,23 @@ global {
 		}
 	} 
 
+	// Realistic wind: every 10 cycles the breeze veers a little (random
+	// walk in direction) and gusts in strength, so plumes wander instead
+	// of streaming one fixed way. wind_matrix in pollution.gaml rebuilds
+	// the diffusion kernel from these two numbers each cycle.
+	reflex vary_wind when: every(10 #cycle) {
+		wind_angle <- wind_angle + rnd(-12.0, 12.0);
+		wind_strength <- min(0.65, max(0.15, wind_strength + rnd(-0.07, 0.07)));
+	}
+
 	// Spread the heat map to neighbouring cells every cycle. The `diff` reflex
 	// that used to do this sits inside the pollution model's own global block
 	// (pollution.gaml), which does not run when `main` is the active model, so
-	// without this the field stayed flat. mat_diff keeps ~60% in place and
-	// moves ~40% to the 8 neighbours.
+	// without this the field stayed flat. The kernel is 5x5: ~30% stays in
+	// place, the rest travels up to two cells away — leaning towards the
+	// wandering wind while the Wind policy is on, symmetric when it is off.
 	reflex spread {
-		diffuse "phero" on: instant_heatmap matrix: mat_diff;
+		diffuse "phero" on: instant_heatmap matrix: (pol_wind ? wind_matrix(wind_angle, wind_strength) : mat_diff_calm);
 	}
 
 	// Live congestion incidents, derived from the simulated load per

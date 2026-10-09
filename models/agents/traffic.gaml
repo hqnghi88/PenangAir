@@ -58,33 +58,64 @@ global {
 		}
 	}
 
-	// Even-odd day rule: advance the simulation day and decide, per
-	// vehicle, whether it may drive today. Non-payers whose plate
-	// parity mismatches the day park (active_today = false -> speed 0,
-	// grey glyph, no load, no emissions). Road-tax payers always drive.
-	// The dummy cars that flow out of traffic incidents are exempt so
-	// they still reach their target and die as designed.
-	reflex even_odd_rule {
-		sim_day <- int(time / day_length);
-		odd_today <- (sim_day mod 2 = 1);
+	// The even/odd switch follows the real calendar: parity is the day of
+	// month of the actual current date (date("now")), not a cycle counter,
+	// so the model always agrees with the clock on the wall. The panel
+	// shows the day-of-month it is using.
+	reflex advance_day {
+		date today <- date("now");
+		odd_today <- (today.day mod 2 = 1);
+		string pol_str <- active_policies_string();
+		if (pol_even_odd) {
+			pol_str <- pol_str + "[day " + string(today.day) + (odd_today ? " odd" : " even") + "]";
+		}
+		ask (param_indicator where (each.name = lb_ActivePolicies)) {
+			do update(pol_str);
+		}
+	}
+
+	// Even-odd day rule, road level: only the designated subset of streets
+	// is denied each day, never the whole network. road.parity_restriction
+	// is -1 (open), 0 (even-only) or 1 (odd-only). A non-payer may stand on
+	// restricted road R only when R matches BOTH today's parity and its own
+	// plate; otherwise it waits (grey, speed 0, no load, no emissions) until
+	// that parity's day comes round again — or, if the road can never admit
+	// it (plate mismatch), it is turned back to the nearest admissible road.
+	// Road-tax payers ignore the rule entirely. Incident dummy cars are
+	// exempt so they still reach their target and die as designed.
+	reflex even_odd_gate when: every(5 #cycle) {
 		if (not pol_even_odd) {
 			ask (vehicle_random where (each.active_today = false and not (each.should_die = true))) {
 				active_today <- true;
 			}
 		} else {
+			int d <- odd_today ? 1 : 0;
 			ask (vehicle_random where (not (each.should_die = true))) {
-				active_today <- road_tax_paid or (plate_parity = (odd_today ? 1 : 0));
+				if (road_tax_paid) {
+					active_today <- true;
+				} else {
+					road r <- road closest_to self;
+					bool ok <- (r = nil) or (r.parity_restriction = -1)
+					    or (r.parity_restriction = d and r.parity_restriction = plate_parity);
+					if (ok) {
+						active_today <- true;
+					} else if (r.parity_restriction = plate_parity) {
+						// Own-parity road: it reopens on that parity's day.
+						active_today <- false;
+					} else {
+						// Never admissible for this plate: turn back to a
+						// road we may use and re-target there.
+						list<road> admissible <- road where (each.parity_restriction = -1 or each.parity_restriction = plate_parity);
+						if (length(admissible) > 0) {
+							road safe <- admissible closest_to self;
+							location <- any_location_in(safe);
+							target <- any_location_in(safe);
+						}
+						active_today <- true;
+					}
+				}
 			}
 		} 
-		// Keep the panel current; with the rule on it also shows which
-		// day of the rotation we are in, so the parked half is explicable.
-		string pol_str <- active_policies_string();
-		if (pol_even_odd) {
-			pol_str <- pol_str + "[day " + string(sim_day) + (odd_today ? " odd" : " even") + "]";
-		}
-		ask (param_indicator where (each.name = lb_ActivePolicies)) {
-			do update(pol_str);
-		}
 	}
 }
 
@@ -101,6 +132,10 @@ species road schedules: [] {
 	bool s2_closed;
 	bool closed;
 	float capacity <- 1 + shape.perimeter / 30;
+	// Even-odd day rule, road level: -1 = open every day, 0 = even-only
+	// road (usable on even days by even-plated vehicles), 1 = odd-only
+	// road. Assigned randomly when the road is seeded in main.gaml.
+	int parity_restriction <- -1;
 	// Live congestion level of this segment, in [0,1].
 	float congestion <- 0.0;
 	float speed_coeff <- 12.0; // 3.0 + rnd(6.0) min: 0.1;
@@ -112,12 +147,16 @@ aspect default {
 		// the moment update_speed_coeff produced a congested road.
 		int ramp_idx <- min(8, max(0, int(9 - speed_coeff / 12.0 * 8.0)));
 		draw shape + (speed_coeff * sizeCoeff) color: brewer_colors("Reds")[ramp_idx];
-		// Even-odd: the network wears today's parity colour — yellow on
-		// even days, magenta on odd days. It flips once per simulated day,
-		// never per cycle, so the map stays calm.
-		if (pol_even_odd) {
-			draw (shape + (speed_coeff * sizeCoeff))
-			    color: (odd_today ? rgb(255, 0, 255, 55) : rgb(255, 230, 0, 55));
+		// Even-odd, road level: only designated streets wear today's
+		// state — parity colour while open that day, dark red while
+		// denied — everything else keeps the plain congestion ramp.
+		if (pol_even_odd and parity_restriction >= 0) {
+			if (parity_restriction = (odd_today ? 1 : 0)) {
+				draw (shape + (speed_coeff * sizeCoeff))
+				    color: (parity_restriction = 0 ? rgb(255, 230, 0, 90) : rgb(255, 0, 255, 90));
+			} else {
+				draw (shape + (speed_coeff * sizeCoeff)) color: rgb(170, 0, 0, 140);
+			}
 		}
 		// Congestion charge: streets inside the cordon are overlayed in
 		// amber, so the tolled area reads directly from the road network.

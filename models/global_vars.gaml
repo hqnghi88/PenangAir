@@ -271,12 +271,12 @@ global {
 	// drive on the matching simulation day unless they paid road tax.
 	bool pol_even_odd <- false;
 	bool pol_road_tax <- false;
+	// Wind: eastward drift in the diffusion kernel (see pollution.gaml).
+	bool pol_wind <- true;
 	// Share of the fleet that pays the road tax (exempt from even-odd).
 	float road_tax_share <- 0.3;
-	// One simulated day; short enough that the odd/even flip is visible
-	// in a demo run (600 s = 10 min per day).
-	float day_length <- 600 #s;
-	int sim_day <- 0;
+	// Odd/even day parity of the real calendar date (day of month of
+	// date("now")); recomputed every cycle by traffic's advance_day.
 	bool odd_today <- false;
 
 	string lb_ActiveFires <- "Active Fires";
@@ -295,6 +295,7 @@ global {
 		if (pol_telework) { on <- on + "Telework, "; }
 		if (pol_even_odd) { on <- on + "Even-odd, "; }
 		if (pol_road_tax) { on <- on + "Road tax, "; }
+		if (pol_wind) { on <- on + "Wind, "; }
 		if (pol_fire_suppression) { on <- on + "Fire supp., "; }
 		if (on = "") { return "none"; }
 		return on;

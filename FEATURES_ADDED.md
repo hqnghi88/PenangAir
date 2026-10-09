@@ -9,6 +9,11 @@
   a fire ~27+ per cell while it burns
 - Parameters: `fire_enabled`, `nb_fires`, `fire_intensity`, `fire_radius`, `fire_ignite_rate`,
   `fire_spread_rate`, `max_fires`; suppression driven by the `pol_fire_suppression` policy switch
+- Dispersion widened: `wind_matrix` / `mat_diff_calm` are 5x5 kernels (~30% stays, the
+  rest travels up to two cells per cycle). With the **Wind** button on, the breeze
+  wanders realistically — direction veers and strength gusts every 10 cycles (random
+  walk), rebuilding the kernel so plumes drift like wind-borne ash; off it spreads
+  symmetrically. Every kernel sums to exactly 0.994, so overall levels never change
 - Fires are seeded in `main.gaml` init (after `study_area` exists) and topped up every 5 cycles
 - Rendered as layered orange/red circles on top of the heat map
 
@@ -37,11 +42,14 @@
   - **PT boost** — adds 15 buses to the fleet
   - **Signal timing** — road capacity x1.5 (toggling off divides it back)
   - **Telework** — removes 20% of all vehicles
-  - **Even-odd days** — every vehicle gets an even/odd plate at creation; with the
-    rule on, even-plated cars may only drive on even simulation days and odd-plated
-    cars only on odd days (one simulated day = `day_length`, 10 min by default).
-    Off-day vehicles park: speed 0, grey glyph, no congestion load, no emissions.
-    Plate parity is shown as a yellow (even) / magenta (odd) dot while the rule is on.
+  - **Even-odd days** — roads are designated at seed time: ~30% even-only,
+    ~30% odd-only, ~40% open. The even/odd switch follows the real calendar:
+    parity is the day of month of the actual current date (`date("now")`), so
+    the model agrees with the wall clock. A non-payer may stand on restricted
+    road R only when R matches both today's parity and its own plate — otherwise it
+    waits (grey, speed 0, no load, no emissions) until that parity's day, or
+    is turned back to an admissible road. Only part of the network is ever
+    denied, never all of it. Plate dots: yellow (even) / magenta (odd).
   - **Road tax** — a `road_tax_share` fraction of the fleet (experiment parameter,
     default 30%, picked randomly on toggle-on; later additions pay with the same
     probability) buys an exemption: payers go anywhere, every day, marked with a
@@ -60,10 +68,10 @@
 - Signal timing — capacity x1.5; road colours ease towards lighter shades as
   congestion clears (smoothed, no instant repaint)
 - Telework / congestion charge — the fleet visibly thins out
-- Even-odd — the whole road network wears today's parity colour (yellow =
-  even day, magenta = odd day; flips once per simulated day), a large
-  "EVEN/ODD DAY - ... PARKED" banner sits over the map, off-day vehicles go
-  grey and stand still, and every car shows its yellow/magenta plate dot
+- Even-odd — only the designated street subset changes: open-today restricted
+  roads wear their parity colour (yellow = even-only, magenta = odd-only),
+  denied-today roads turn dark red; vehicles waiting on those roads go grey
+  with their plate dot visible
 - Road tax — payers are repainted solid gold body + floating gold ring;
   they stay mobile on every day while the even-odd rule is on
 - Fire suppression — blue containment ring around each fire

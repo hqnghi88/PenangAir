@@ -101,7 +101,7 @@ experiment MainExp autorun: false {
 		// slider is visible on the map, not only in the numbers.
 		species bus_random;
 		species lorry_random;
-//		species fire_source; 
+		species fire_source; 
 		species policy_button;
 
 			mesh instant_heatmap scale: 4 above: 1 triangulation: true transparency: 0.5 color: scale(zone_colors1) smooth: 1;

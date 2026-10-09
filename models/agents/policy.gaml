@@ -18,21 +18,22 @@ global {
 		float H <- world.shape.height;
 		point ctr <- world.shape.location;
 		// One row of clickable policy buttons below the world envelope.
-		// Nine buttons now, so each is narrower than the original seven.
-		float bw <- W * 0.098;
+		// Ten buttons now, so each is narrower than the original seven.
+		float bw <- W * 0.088;
 		float bh <- H * 0.06;
-		float gap <- W * 0.006;
+		float gap <- W * 0.005;
 		float x0 <- ctr.x - W * 0.46;
 		float by <- ctr.y + H * 0.85;
 		create policy_button with: [x::x0, y::by, width::bw, height::bh, code::"charge", label::"Cong. charge", active::pol_congestion_charge];
-		create policy_button with: [x::x0 + (bw + gap), y::by, width::bw, height::bh, code::"lez", label::"Low emission zone", active::pol_low_emission_zone];
+		create policy_button with: [x::x0 + (bw + gap), y::by, width::bw, height::bh, code::"lez", label::"LEZ", active::pol_low_emission_zone];
 		create policy_button with: [x::x0 + 2 * (bw + gap), y::by, width::bw, height::bh, code::"pt", label::"PT boost", active::pol_public_transport];
 		create policy_button with: [x::x0 + 3 * (bw + gap), y::by, width::bw, height::bh, code::"signal", label::"Signal timing", active::pol_signal_timing];
 		create policy_button with: [x::x0 + 4 * (bw + gap), y::by, width::bw, height::bh, code::"telework", label::"Telework", active::pol_telework];
 		create policy_button with: [x::x0 + 5 * (bw + gap), y::by, width::bw, height::bh, code::"evenodd", label::"Even-odd days", active::pol_even_odd];
 		create policy_button with: [x::x0 + 6 * (bw + gap), y::by, width::bw, height::bh, code::"roadtax", label::"Road tax", active::pol_road_tax];
-		create policy_button with: [x::x0 + 7 * (bw + gap), y::by, width::bw, height::bh, code::"suppression", label::"Fire suppression", active::pol_fire_suppression];
-		create policy_button with: [x::x0 + 8 * (bw + gap), y::by, width::bw, height::bh, code::"fires", label::"Fires on/off", active::pol_fires_enabled];
+		create policy_button with: [x::x0 + 7 * (bw + gap), y::by, width::bw, height::bh, code::"wind", label::"Wind", active::pol_wind];
+		create policy_button with: [x::x0 + 8 * (bw + gap), y::by, width::bw, height::bh, code::"suppression", label::"Fire suppression", active::pol_fire_suppression];
+		create policy_button with: [x::x0 + 9 * (bw + gap), y::by, width::bw, height::bh, code::"fires", label::"Fires on/off", active::pol_fires_enabled];
 		// Map overlay for the zone policies; built here because its own
 		// geometry prep waits for study_area via a reflex.
 		create policy_overlay;
@@ -87,8 +88,8 @@ global {
 			max_lorries <- max(1, length(lorry_random));
 		}
 		if (code = "evenodd") {
-			// Switching off releases everyone the rule had parked; the
-			// live gate in traffic.gaml re-applies it when switched on.
+			// Switching off releases everyone the rule had waiting; the
+			// road-level gate in traffic.gaml re-applies on switch-on.
 			if (not pol_even_odd) {
 				ask (vehicle_random where (each.active_today = false)) { active_today <- true; }
 			}
@@ -150,15 +151,15 @@ species policy_overlay {
 			    color: #red anchor: #center font: font(40);
 		}
 		// Even-odd status banner: flips once per simulated day, naming
-		// exactly which half of the fleet is parked right now.
-		if (ready and pol_even_odd) {
-			string day_txt <- odd_today ? "ODD DAY - even plates PARKED" : "EVEN DAY - odd plates PARKED";
-			draw day_txt at: (study_area.location + {0.0, study_half_size * 0.92})
-			    color: (odd_today ? #magenta : #yellow) anchor: #center font: font(60);
-		}
+		// which designated roads are closed red today.
+//		if (ready and pol_even_odd) {
+//			string day_txt <- odd_today ? "ODD DAY - even-only roads CLOSED" : "EVEN DAY - odd-only roads CLOSED";
+//			draw day_txt at: (study_area.location + {0.0, study_half_size * 0.92})
+//			    color: (odd_today ? #magenta : #yellow) anchor: #center font: font(60);
+//		}
 	}
 }
-
+ 
 species policy_button {
 	float x;
 	float y;
@@ -178,6 +179,7 @@ species policy_button {
 			match "telework" { pol_telework <- not pol_telework; active <- pol_telework; }
 			match "evenodd" { pol_even_odd <- not pol_even_odd; active <- pol_even_odd; }
 			match "roadtax" { pol_road_tax <- not pol_road_tax; active <- pol_road_tax; }
+			match "wind" { pol_wind <- not pol_wind; active <- pol_wind; }
 			match "suppression" { pol_fire_suppression <- not pol_fire_suppression; active <- pol_fire_suppression; }
 			match "fires" { pol_fires_enabled <- not pol_fires_enabled; active <- pol_fires_enabled; }
 		}
